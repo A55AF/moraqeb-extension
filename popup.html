@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moraqeb Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="extension-container">
+    <header class="header">
+      <div class="brand">
+        <span class="logo-text">Moraqeb</span>
+        <span class="version-tag">v1.0</span>
+      </div>
+      <div id="status-badge" class="badge">Idle</div>
+    </header>
+
+    <main class="content">
+      <!-- Loading State -->
+      <div id="state-loading" class="state-view">
+        <div class="spinner"></div>
+        <p>Scanning Amazon listing...</p>
+      </div>
+
+      <!-- No Product State -->
+      <div id="state-empty" class="state-view hidden">
+        <div class="empty-icon">[Page Scan]</div>
+        <h3>No Amazon Product Detected</h3>
+        <p>Navigate to any Amazon product listing (e.g. amazon.eg, amazon.com) to track it with Moraqeb.</p>
+        <button id="btn-open-dashboard-empty" class="btn btn-secondary">Open Moraqeb Dashboard</button>
+      </div>
+
+      <!-- Product Found State -->
+      <div id="state-product" class="state-view hidden">
+        <div class="product-preview">
+          <div class="product-image-wrap">
+            <img id="prod-img" src="" alt="Product">
+          </div>
+          <div class="product-info">
+            <h4 id="prod-title" class="product-title">Product Title</h4>
+            <div class="badges-row">
+              <span id="badge-asin" class="pill pill-asin">ASIN</span>
+              <span id="badge-stock" class="pill pill-stock">In Stock</span>
+              <span id="badge-fba" class="pill pill-fba hidden">FBA</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">Price</span>
+            <span id="metric-price" class="metric-val">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Rating</span>
+            <span id="metric-rating" class="metric-val">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Reviews</span>
+            <span id="metric-reviews" class="metric-val">—</span>
+          </div>
+        </div>
+
+        <div class="seller-line">
+          <span class="seller-label">Seller:</span>
+          <span id="prod-seller" class="seller-name">—</span>
+        </div>
+
+        <div class="actions">
+          <button id="btn-track-product" class="btn btn-primary">Track in Moraqeb</button>
+          <button id="btn-open-dashboard" class="btn btn-secondary">Open Dashboard</button>
+        </div>
+
+        <div id="action-feedback" class="feedback-msg hidden"></div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>Amazon Intelligence &amp; FBA Analytics</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
