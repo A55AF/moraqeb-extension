@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,25 +10,38 @@
   <div class="extension-container">
     <header class="header">
       <div class="brand">
+        <img src="icons/icon16.png" alt="Moraqeb" class="brand-icon">
         <span class="logo-text">Moraqeb</span>
-        <span class="version-tag">v1.0</span>
+        <span class="version-tag">v2.0</span>
       </div>
-      <div id="status-badge" class="badge">Idle</div>
+      <div id="status-badge" class="badge" data-i18n="status_idle">Idle</div>
     </header>
 
     <main class="content">
       <!-- Loading State -->
       <div id="state-loading" class="state-view">
         <div class="spinner"></div>
-        <p>Scanning Amazon listing...</p>
+        <p data-i18n="scanning_listing">Scanning Amazon listing...</p>
       </div>
 
       <!-- No Product State -->
       <div id="state-empty" class="state-view hidden">
-        <div class="empty-icon">[Page Scan]</div>
-        <h3>No Amazon Product Detected</h3>
-        <p>Navigate to any Amazon product listing (e.g. amazon.eg, amazon.com) to track it with Moraqeb.</p>
-        <button id="btn-open-dashboard-empty" class="btn btn-secondary">Open Moraqeb Dashboard</button>
+        <div class="empty-icon-wrap">
+          <svg class="empty-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <h3 data-i18n="no_product_detected">No Amazon Product Detected</h3>
+        <p data-i18n="no_product_desc">Navigate to any Amazon product listing (e.g. amazon.eg, amazon.com) to track it with Moraqeb.</p>
+        <button type="button" id="btn-open-dashboard-empty" class="btn btn-secondary">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          <span data-i18n="open_dashboard">Open Dashboard</span>
+        </button>
       </div>
 
       <!-- Product Found State -->
@@ -41,35 +54,49 @@
             <h4 id="prod-title" class="product-title">Product Title</h4>
             <div class="badges-row">
               <span id="badge-asin" class="pill pill-asin">ASIN</span>
-              <span id="badge-stock" class="pill pill-stock">In Stock</span>
-              <span id="badge-fba" class="pill pill-fba hidden">FBA</span>
+              <span id="badge-stock" class="pill pill-stock" data-i18n="in_stock">In Stock</span>
+              <span id="badge-fba" class="pill pill-fba hidden" data-i18n="fba_fulfilled">FBA</span>
             </div>
           </div>
         </div>
 
         <div class="metrics-grid">
           <div class="metric-card">
-            <span class="metric-label">Price</span>
+            <span class="metric-label" data-i18n="current_price">Price</span>
             <span id="metric-price" class="metric-val">—</span>
           </div>
           <div class="metric-card">
-            <span class="metric-label">Rating</span>
+            <span class="metric-label" data-i18n="rating">Rating</span>
             <span id="metric-rating" class="metric-val">—</span>
           </div>
           <div class="metric-card">
-            <span class="metric-label">Reviews</span>
+            <span class="metric-label" data-i18n="reviews">Reviews</span>
             <span id="metric-reviews" class="metric-val">—</span>
           </div>
         </div>
 
         <div class="seller-line">
-          <span class="seller-label">Seller:</span>
+          <span class="seller-label" data-i18n="primary_seller">Seller:</span>
           <span id="prod-seller" class="seller-name">—</span>
         </div>
 
         <div class="actions">
-          <button id="btn-track-product" class="btn btn-primary">Track in Moraqeb</button>
-          <button id="btn-open-dashboard" class="btn btn-secondary">Open Dashboard</button>
+          <button type="button" id="btn-track-product" class="btn btn-primary">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            <span id="track-btn-label" data-i18n="track_in_moraqeb">Track in Moraqeb</span>
+          </button>
+          <button type="button" id="btn-open-dashboard" class="btn btn-secondary">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span data-i18n="open_dashboard">Open Dashboard</span>
+          </button>
         </div>
 
         <div id="action-feedback" class="feedback-msg hidden"></div>
@@ -81,6 +108,8 @@
     </footer>
   </div>
 
+  <script src="locales.js"></script>
+  <script src="storage.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

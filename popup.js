@@ -1,9 +1,25 @@
 // Moraqeb Extension Popup Script
-// Communicates with content script and handles 1-click sync to local Moraqeb dashboard
-
-const MORAQEB_BASE_URL = 'http://localhost:8501';
+// Syncs with settings (theme & language), communicates with content script, and tracks to local storage
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Load settings (theme & language)
+  const settings = await StorageManager.getSettings();
+  const lang = settings.lang || 'en';
+  const theme = settings.theme || 'dark';
+
+  document.documentElement.setAttribute('data-theme', theme);
+  document.documentElement.setAttribute('lang', lang);
+  document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+
+  // Translate static labels
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    const translation = t(key, lang);
+    if (translation) {
+      el.textContent = translation;
+    }
+  });
+
   const stateLoading = document.getElementById('state-loading');
   const stateEmpty = document.getElementById('state-empty');
   const stateProduct = document.getElementById('state-product');
@@ -21,9 +37,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const prodSeller = document.getElementById('prod-seller');
 
   const btnTrack = document.getElementById('btn-track-product');
+  const trackBtnLabel = document.getElementById('track-btn-label');
   const btnOpenDash = document.getElementById('btn-open-dashboard');
   const btnOpenDashEmpty = document.getElementById('btn-open-dashboard-empty');
   const actionFeedback = document.getElementById('action-feedback');
+
+  let activeProduct = null;
 
   function showView(view) {
     stateLoading.classList.add('hidden');
@@ -38,16 +57,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     actionFeedback.classList.remove('hidden');
     setTimeout(() => {
       actionFeedback.classList.add('hidden');
-    }, 4000);
+    }, 3500);
   }
 
-  function openDashboard(queryParam = '') {
-    const url = queryParam ? `${MORAQEB_BASE_URL}/${queryParam}` : MORAQEB_BASE_URL;
-    chrome.tabs.create({ url });
+  function openDashboard(asin = '') {
+    const targetUrl = chrome.runtime.getURL(`dashboard.html${asin ? `?asin=${encodeURIComponent(asin)}` : ''}`);
+    chrome.tabs.create({ url: targetUrl });
   }
 
-  btnOpenDash.addEventListener('click', () => openDashboard());
-  btnOpenDashEmpty.addEventListener('click', () => openDashboard());
+  btnOpenDash.addEventListener('click', () => {
+    openDashboard(activeProduct ? activeProduct.asin : '');
+  });
+
+  btnOpenDashEmpty.addEventListener('click', () => {
+    openDashboard();
+  });
 
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -58,13 +82,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Request product snapshot from active tab content script
-    chrome.tabs.sendMessage(activeTab.id, { action: 'GET_PRODUCT_DETAILS' }, (response) => {
+    chrome.tabs.sendMessage(activeTab.id, { action: 'GET_PRODUCT_DETAILS' }, async (response) => {
       if (chrome.runtime.lastError || !response || !response.success || !response.data) {
         showView(stateEmpty);
         return;
       }
 
       const p = response.data;
+      activeProduct = p;
+
+      // Check if already in storage
+      const existing = await StorageManager.getProduct(p.asin);
 
       // Populate UI
       prodTitle.textContent = p.title || 'Amazon Product';
@@ -72,11 +100,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (p.image) {
         prodImg.src = p.image;
+      } else if (p.images && p.images.length > 0) {
+        prodImg.src = p.images[0];
       } else {
         prodImg.src = 'icons/icon48.png';
       }
 
-      badgeStock.textContent = p.in_stock ? 'In Stock' : 'Out of Stock';
+      badgeStock.textContent = p.in_stock ? t('in_stock', lang) : t('out_of_stock', lang);
       badgeStock.className = `pill ${p.in_stock ? 'pill-stock' : 'pill-asin'}`;
 
       if (p.is_fba) {
@@ -85,29 +115,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         badgeFba.classList.add('hidden');
       }
 
-      metricPrice.textContent = p.price_formatted || (p.price ? `${p.price}` : '—');
+      metricPrice.textContent = p.price_formatted || (p.price ? `${p.price} EGP` : '—');
       metricRating.textContent = p.rating ? `${p.rating} / 5` : '—';
       metricReviews.textContent = p.reviews_count ? Number(p.reviews_count).toLocaleString() : '—';
       prodSeller.textContent = p.seller || 'Amazon';
 
-      statusBadge.textContent = 'Active';
+      statusBadge.textContent = existing ? t('status_tracked', lang) : t('status_active', lang);
       statusBadge.classList.add('active');
+
+      if (existing) {
+        trackBtnLabel.textContent = t('update_in_moraqeb', lang);
+      } else {
+        trackBtnLabel.textContent = t('track_in_moraqeb', lang);
+      }
 
       showView(stateProduct);
 
       // Track button event
-      btnTrack.onclick = () => {
+      btnTrack.onclick = async () => {
         btnTrack.disabled = true;
-        btnTrack.textContent = 'Tracking...';
+        trackBtnLabel.textContent = lang === 'ar' ? 'جاري الحفظ...' : 'Saving...';
 
-        // 1-Click Sync: open or send to Moraqeb with query param
-        openDashboard(`?add_asin=${encodeURIComponent(p.asin)}`);
-        showFeedback(`Sent ASIN ${p.asin} to Moraqeb Dashboard`);
-
-        setTimeout(() => {
+        try {
+          await StorageManager.saveProduct(p);
+          statusBadge.textContent = t('status_tracked', lang);
+          showFeedback(`${t('scrape_success', lang)}: ${p.asin}`);
+          trackBtnLabel.textContent = t('update_in_moraqeb', lang);
+        } catch (err) {
+          console.error('Error saving product:', err);
+          showFeedback(t('scrape_error', lang), 'error');
+          trackBtnLabel.textContent = t('track_in_moraqeb', lang);
+        } finally {
           btnTrack.disabled = false;
-          btnTrack.textContent = 'Track in Moraqeb';
-        }, 1500);
+        }
       };
     });
   } catch (err) {

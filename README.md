@@ -1,30 +1,50 @@
-# Moraqeb - Amazon Product Tracker Extension
+# Moraqeb - Amazon Product Tracker & Analytics Extension
 
-A lightweight, privacy-focused cross-browser extension (Chrome, Edge, Brave, and Firefox) to extract live Amazon product metrics and sync them directly to your local Moraqeb analytics dashboard.
+A powerful, self-contained cross-browser extension (Chrome, Edge, Brave, and Firefox) to track Amazon listings, analyze FBA unit economics, and inspect price & BSR history with a built-in browser dashboard.
 
 ---
 
-## Features
+## Key Features
 
-- **Live Amazon DOM Inspection**: Automatically detects product ASIN, title, pricing, stock availability, ratings, and FBA fulfillment status directly on the page.
-- **Clean Interface**: Completely free of emojis, designed with a modern dark theme and responsive cards.
-- **1-Click Tracking**: Synchronizes any Amazon product with your local Moraqeb dashboard (`http://localhost:8501`) instantly.
-- **Cross-Browser Manifest V3**: Fully compliant with modern Chrome and Firefox extension specifications.
+- **100% Self-Contained**: No Docker, no Python, and no local servers required. All analytics, algorithms, and persistence run locally inside the browser using `chrome.storage.local`.
+- **Integrated Extension Dashboard (`dashboard.html`)**:
+  - **Single Product Deep Dive**:
+    - Product Header & Horizontal Image Gallery.
+    - 6 Key Metrics: Price, Rating, Reviews, BSR, Estimated Monthly Sales, Opportunity Score.
+    - Listing Quality Index (0-100) & Risk Radar (0-100) with risk triggers.
+    - Detailed Specs (ASIN, Parent ASIN, Dimensions, Category path, Stock left, Seller).
+    - Seller Details Modal Dialog.
+    - Tabs: Key Features, Full Description, SEO Keywords extraction, Customer Reviews & Sentiment aspects, Live Competitor Analysis.
+    - Interactive FBA Profit & Margin Calculator with configurable unit cost, referral fee, FBA fee, and batch working capital.
+    - Interactive Canvas Charts for Price History and BSR Rank over time (with reversed Y axis).
+  - **Product Comparison Matrix**:
+    - Tabular comparison of all tracked listings with filtering, sorting, and quick navigation.
+  - **AI Product Hunter**:
+    - Niche keyword scanner with opportunity score filtering and 1-click tracking.
+  - **Bilingual Support**:
+    - Full English and Arabic (العربية) with instant RTL layout flipping.
+  - **Data Management**:
+    - Export JSON backup, import backup, and clear data.
+- **Deep DOM Extraction (`content.js`)**:
+  - Automatically extracts ASIN, title, brand, dimensions, bullets, description, high-res images, BSR, breadcrumbs, badges, rating, review counts, and seller info.
+- **Quick Popup Action (`popup.html`)**:
+  - Minimal product preview snapshot when clicking the extension icon.
+  - 1-click "Track in Moraqeb" button.
+  - "Open Dashboard" button directly focused on the active product.
 
 ---
 
 ## Installation Guide
 
 ### Google Chrome / Brave / Microsoft Edge
-1. Clone or download this repository.
-2. Open your browser and navigate to the Extensions management page:
+1. Open your browser and navigate to the Extensions management page:
    - Chrome: `chrome://extensions`
    - Edge: `edge://extensions`
    - Brave: `brave://extensions`
-3. Enable **Developer mode** (toggle in the top-right corner).
-4. Click **Load unpacked**.
-5. Select this `moraqeb-extension` folder.
-6. The Moraqeb extension icon will appear in your browser toolbar. Pin it for quick access!
+2. Enable **Developer mode** (toggle in the top-right corner).
+3. Click **Load unpacked**.
+4. Select this `moraqeb-extension` folder.
+5. The Moraqeb extension icon will appear in your browser toolbar. Pin it for quick access!
 
 ### Mozilla Firefox
 1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`.
@@ -36,16 +56,10 @@ A lightweight, privacy-focused cross-browser extension (Chrome, Edge, Brave, and
 
 ## Usage
 
-1. Start your local Moraqeb instance:
-   ```bash
-   cd ../moraqeb
-   # Run directly or via Docker Compose:
-   docker compose up -d
-   ```
-2. Navigate to any Amazon product page (e.g. `https://www.amazon.eg/dp/B07QSFHT27` or `https://www.amazon.com/dp/...`).
-3. Click the **Moraqeb** extension icon in your browser toolbar.
-4. View the live snapshot: price, rating out of 5, review count, and seller details.
-5. Click **Track in Moraqeb** to send the product directly to your local database!
+1. Navigate to any Amazon product page (e.g. `https://www.amazon.eg/dp/...` or `https://www.amazon.com/dp/...`).
+2. Click the **Moraqeb** extension icon in your browser toolbar to preview the listing snapshot.
+3. Click **Track in Moraqeb** to save the product and record its price/BSR history point.
+4. Click **Open Dashboard** to open the full interactive Moraqeb dashboard in a new tab!
 
 ---
 
@@ -54,10 +68,15 @@ A lightweight, privacy-focused cross-browser extension (Chrome, Edge, Brave, and
 ```
 moraqeb-extension/
 ├── manifest.json       # Manifest V3 extension configuration
-├── content.js          # Injected script parsing Amazon product DOM
+├── content.js          # Deep DOM scraper for Amazon listings
 ├── popup.html          # Extension popup interface
-├── popup.js            # Product retrieval and 1-click sync handler
-├── popup.css           # Clean modern styles (zero emojis)
+├── popup.js            # Popup controller & 1-click tracking
+├── popup.css           # Popup styles
+├── dashboard.html      # Full-featured internal analytics dashboard
+├── dashboard.js        # Dashboard controller, view routing & interactive charts
+├── dashboard.css       # Responsive styling with RTL support
+├── locales.js          # Bilingual translations (English & Arabic)
+├── storage.js          # chrome.storage.local wrapper & analytics engine
 ├── icons/              # Extension icons (16px, 48px, 128px)
 └── README.md           # Documentation and setup guide
 ```

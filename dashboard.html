@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moraqeb - Amazon Product Tracker & Analytics</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <!-- Floating Button to Expand Sidebar when collapsed -->
+  <button type="button" id="btn-sidebar-expand" class="sidebar-expand-btn hidden" title="Expand Sidebar" aria-label="Expand Sidebar">
+    <svg class="icon icon-chevrons" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="13 17 18 12 13 7"></polyline>
+      <polyline points="6 17 11 12 6 7"></polyline>
+    </svg>
+  </button>
+
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside id="app-sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <img src="icons/icon48.png" alt="Moraqeb Logo" class="brand-icon">
+          <div>
+            <span class="brand-title">Moraqeb</span>
+            <span class="brand-sub">Amazon Intelligence</span>
+          </div>
+        </div>
+        <div class="brand-actions">
+          <span class="version-tag">v2.0</span>
+          <button type="button" id="btn-sidebar-collapse" class="sidebar-collapse-btn" title="Collapse Sidebar" aria-label="Collapse Sidebar">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Theme Selector (Dark / Light) -->
+      <div class="sidebar-group">
+        <label class="group-label" data-i18n="theme_label">Theme / المظهر</label>
+        <div class="radio-toggle">
+          <button type="button" id="theme-dark" class="toggle-btn active">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <span data-i18n="theme_dark">Dark</span>
+          </button>
+          <button type="button" id="theme-light" class="toggle-btn">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <span data-i18n="theme_light">Light</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Language Selector -->
+      <div class="sidebar-group">
+        <label class="group-label" data-i18n="language_label">Language / اللغة</label>
+        <div class="radio-toggle">
+          <button type="button" id="lang-en" class="toggle-btn active">English</button>
+          <button type="button" id="lang-ar" class="toggle-btn">العربية</button>
+        </div>
+      </div>
+
+      <!-- Add Product -->
+      <div class="sidebar-group">
+        <label class="group-label" data-i18n="add_product_label">Add New Product</label>
+        <div class="add-input-row">
+          <input type="text" id="input-add-product" data-i18n-ph="add_product_placeholder" placeholder="Enter product url or ASIN">
+          <button type="button" id="btn-add-product" class="btn btn-primary" data-i18n="add_product_btn">Add Product</button>
+        </div>
+        <div id="add-feedback" class="feedback-msg hidden"></div>
+      </div>
+
+      <!-- View Mode Radio -->
+      <div class="sidebar-group">
+        <label class="group-label" data-i18n="view_mode">View Mode</label>
+        <div class="mode-nav">
+          <button type="button" class="mode-btn active" data-mode="single">
+            <svg class="mode-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+            <span data-i18n="mode_single">Single Product</span>
+          </button>
+          <button type="button" class="mode-btn" data-mode="compare">
+            <svg class="mode-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            <span data-i18n="mode_compare">Compare All Products</span>
+          </button>
+          <button type="button" class="mode-btn" data-mode="hunter">
+            <svg class="mode-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+            </svg>
+            <span data-i18n="mode_hunter">Product Hunter</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Product Picker (for Single View) -->
+      <div id="sidebar-product-picker-group" class="sidebar-group">
+        <div class="group-header-row">
+          <label class="group-label" data-i18n="pick_product">Pick a Product</label>
+          <span id="tracked-count-badge" class="badge-count">0</span>
+        </div>
+        <select id="select-active-product" class="product-dropdown">
+          <option value="" disabled selected>Select tracked product...</option>
+        </select>
+      </div>
+
+      <!-- Data Management / Footer -->
+      <div class="sidebar-footer">
+        <button type="button" id="btn-export-data" class="footer-action-btn" title="Export Backup">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span data-i18n="export_data">Export Data</span>
+        </button>
+        <button type="button" id="btn-import-data" class="footer-action-btn" title="Import Backup">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <span data-i18n="import_data">Import Data</span>
+        </button>
+        <input type="file" id="file-import-input" accept=".json" style="display:none;">
+        <button type="button" id="btn-clear-all" class="footer-action-btn danger" title="Clear all data">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span data-i18n="clear_all">Clear All</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Empty State View (When no products are tracked yet) -->
+      <section id="view-empty" class="view-panel hidden">
+        <div class="empty-state-card">
+          <div class="empty-icon-wrap">
+            <svg class="empty-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <h2 data-i18n="app_title">Amazon Product Tracker</h2>
+          <p class="empty-desc" data-i18n="no_products">No products tracked yet. Track an Amazon listing using the extension popup or enter an ASIN above.</p>
+          <div class="empty-actions">
+            <button type="button" id="btn-sample-load" class="btn btn-secondary">Load Sample Product Data</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 1: Single Product View -->
+      <section id="view-single" class="view-panel">
+        <div class="product-header">
+          <div class="product-header-main">
+            <div id="product-category-path" class="category-breadcrumb"></div>
+            <h1 id="product-title" class="title-text">Product Title</h1>
+            
+            <div class="badges-toolbar">
+              <span id="badge-best-seller" class="badge badge-accent hidden" data-i18n="best_seller">Best Seller</span>
+              <span id="badge-amz-choice" class="badge badge-dark hidden" data-i18n="amazon_choice">Amazon's Choice</span>
+              <span id="badge-stock-status" class="badge badge-success" data-i18n="in_stock">In Stock</span>
+              <span id="badge-fba-status" class="badge badge-primary hidden" data-i18n="fba_fulfilled">FBA Fulfilled</span>
+              <a id="link-amazon" href="#" target="_blank" rel="noopener" class="external-link">
+                <span data-i18n="view_on_amazon">View on Amazon</span>
+                <svg class="icon icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+              </a>
+            </div>
+          </div>
+
+          <div class="product-header-actions">
+            <button type="button" id="btn-delete-product" class="btn btn-outline-danger" data-i18n="delete_product">Delete</button>
+          </div>
+        </div>
+
+        <!-- Horizontal Image Gallery -->
+        <div class="gallery-container">
+          <h3 class="section-heading" data-i18n="images_section">Images</h3>
+          <div id="horizontal-gallery" class="horizontal-gallery">
+            <!-- Dynamically populated cards -->
+          </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- Key Metrics Row -->
+        <div class="section-block">
+          <h3 class="section-heading" data-i18n="overview_section">Product Overview &amp; Intelligence</h3>
+          <div class="metrics-row">
+            <div class="metric-box">
+              <span class="m-label" data-i18n="current_price">Current Price</span>
+              <span id="m-price" class="m-value">—</span>
+            </div>
+            <div class="metric-box">
+              <span class="m-label" data-i18n="rating">Rating</span>
+              <span id="m-rating" class="m-value">—</span>
+            </div>
+            <div class="metric-box">
+              <span class="m-label" data-i18n="reviews">Reviews</span>
+              <span id="m-reviews" class="m-value">—</span>
+            </div>
+            <div class="metric-box">
+              <span class="m-label" data-i18n="bsr">BSR</span>
+              <span id="m-bsr" class="m-value">—</span>
+            </div>
+            <div class="metric-box">
+              <span class="m-label" data-i18n="est_sales">Est. Monthly Sales</span>
+              <span id="m-sales" class="m-value">—</span>
+            </div>
+            <div class="metric-box highlight">
+              <span class="m-label" data-i18n="opp_score">Opportunity Score</span>
+              <span id="m-opp-score" class="m-value">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Intelligence Gauges -->
+        <div class="gauges-grid">
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="gauge-title" data-i18n="listing_quality">Listing Quality Index</span>
+              <span id="gauge-lq-val" class="gauge-val">0/100</span>
+            </div>
+            <div class="progress-track">
+              <div id="gauge-lq-bar" class="progress-fill" style="width: 0%;"></div>
+            </div>
+            <p class="gauge-note">Based on title length, bullets count, images, description depth &amp; reviews</p>
+          </div>
+
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="gauge-title" data-i18n="risk_radar">Risk Radar (Lower is better)</span>
+              <span id="gauge-risk-val" class="gauge-val">0/100</span>
+            </div>
+            <div class="progress-track">
+              <div id="gauge-risk-bar" class="progress-fill risk" style="width: 0%;"></div>
+            </div>
+            <div id="gauge-risk-reasons" class="risk-tags-container"></div>
+          </div>
+        </div>
+
+        <!-- Specifications & Seller Row -->
+        <div class="specs-grid">
+          <div class="specs-col">
+            <div class="spec-item">
+              <span class="spec-label" data-i18n="asin">ASIN / Code:</span>
+              <span id="spec-asin" class="spec-val"></span>
+            </div>
+            <div id="row-parent-asin" class="spec-item hidden">
+              <span class="spec-label" data-i18n="parent_asin">Parent ASIN:</span>
+              <span id="spec-parent-asin" class="spec-val"></span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label" data-i18n="brand">Brand:</span>
+              <span id="spec-brand" class="spec-val"></span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label" data-i18n="dimensions">Dimensions:</span>
+              <span id="spec-dimensions" class="spec-val"></span>
+            </div>
+            <div id="row-stock-left" class="spec-item hidden">
+              <span class="spec-label" data-i18n="stock_left">Stock Left:</span>
+              <span id="spec-stock-left" class="spec-val"></span>
+            </div>
+          </div>
+
+          <div class="specs-col">
+            <div class="spec-item">
+              <span class="spec-label" data-i18n="category">Category:</span>
+              <span id="spec-category" class="spec-val"></span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label" data-i18n="variants_count">Variants Count:</span>
+              <span id="spec-variants" class="spec-val"></span>
+            </div>
+            <div id="row-bought-month" class="spec-item hidden">
+              <span class="spec-label" data-i18n="bought_past_month">Bought Past Month:</span>
+              <span id="spec-bought-month" class="spec-val"></span>
+            </div>
+            <div class="spec-item seller-row">
+              <div class="seller-inline">
+                <span class="spec-label" data-i18n="primary_seller">Primary Seller:</span>
+                <span id="spec-seller-name" class="spec-val bold"></span>
+              </div>
+              <button type="button" id="btn-view-seller-dialog" class="btn btn-sm btn-secondary" data-i18n="view_seller_btn">View Seller Details</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Tabs -->
+        <div class="tabs-wrapper">
+          <div class="tabs-header">
+            <button type="button" class="tab-btn active" data-tab="tab-features" data-i18n="tab_features">Key Features</button>
+            <button type="button" class="tab-btn" data-tab="tab-desc" data-i18n="tab_description">Description</button>
+            <button type="button" class="tab-btn" data-tab="tab-keywords" data-i18n="tab_keywords">Keywords &amp; SEO</button>
+            <button type="button" class="tab-btn" data-tab="tab-reviews" data-i18n="tab_reviews">Customer Reviews &amp; Signals</button>
+            <button type="button" class="tab-btn" data-tab="tab-competitors" data-i18n="tab_competitors">Competitor Analysis</button>
+          </div>
+
+          <div class="tab-content-panel">
+            <!-- Features Tab -->
+            <div id="tab-features" class="tab-pane active">
+              <ul id="list-feature-bullets" class="bullet-list"></ul>
+              <p id="features-empty-note" class="empty-note hidden" data-i18n="no_bullets">No feature bullets recorded.</p>
+            </div>
+
+            <!-- Description Tab -->
+            <div id="tab-desc" class="tab-pane">
+              <div id="text-product-desc" class="desc-content"></div>
+              <p id="desc-empty-note" class="empty-note hidden" data-i18n="no_description">No description recorded.</p>
+            </div>
+
+            <!-- Keywords Tab -->
+            <div id="tab-keywords" class="tab-pane">
+              <p class="tab-lead" data-i18n="core_keywords">Core Keywords extracted from Listing:</p>
+              <div id="chips-keywords" class="chips-container"></div>
+              <p id="keywords-empty-note" class="empty-note hidden" data-i18n="no_keywords">Not enough text to extract keywords.</p>
+            </div>
+
+            <!-- Reviews Tab -->
+            <div id="tab-reviews" class="tab-pane">
+              <div id="reviews-sentiment-section">
+                <div id="sentiment-summary-box" class="sentiment-summary-box hidden">
+                  <h4 data-i18n="ai_customer_sentiment">AI Customer Sentiment Summary</h4>
+                  <p id="sentiment-summary-text"></p>
+                </div>
+
+                <div id="sentiment-aspects-box" class="sentiment-aspects-box hidden">
+                  <h5 data-i18n="sentiment_aspects">Key Sentiment Themes &amp; Aspects</h5>
+                  <div id="sentiment-aspects-chips" class="aspects-chips"></div>
+                </div>
+
+                <h4 class="subheading" data-i18n="top_reviews">Top Customer Reviews</h4>
+                <div id="reviews-list-container" class="reviews-list"></div>
+                <p id="reviews-empty-note" class="empty-note hidden" data-i18n="no_reviews_found">No customer reviews found for this product.</p>
+              </div>
+            </div>
+
+            <!-- Competitor Tab -->
+            <div id="tab-competitors" class="tab-pane">
+              <div class="comp-search-bar">
+                <input type="text" id="input-comp-query" placeholder="Search keywords...">
+                <button type="button" id="btn-run-comp-analysis" class="btn btn-primary" data-i18n="run_comp_analysis">Analyze Live Competitors</button>
+              </div>
+
+              <div id="comp-results-block" class="comp-results-block hidden">
+                <h4 class="subheading" data-i18n="comp_summary_title">Competitive Landscape Summary</h4>
+                <div class="metrics-row comp-metrics">
+                  <div class="metric-box">
+                    <span class="m-label" data-i18n="direct_competitors">Direct Competitors</span>
+                    <span id="cm-count" class="m-value">0</span>
+                  </div>
+                  <div class="metric-box">
+                    <span class="m-label" data-i18n="avg_comp_rating">Avg Rating</span>
+                    <span id="cm-rating" class="m-value">—</span>
+                  </div>
+                  <div class="metric-box">
+                    <span class="m-label" data-i18n="low_review_share">Low Review Moat (&lt;500)</span>
+                    <span id="cm-low-review" class="m-value">—</span>
+                  </div>
+                  <div class="metric-box">
+                    <span class="m-label" data-i18n="median_price">Median Price</span>
+                    <span id="cm-median-price" class="m-value">—</span>
+                  </div>
+                </div>
+
+                <div id="comp-verdict-alert" class="alert-box alert-info">
+                  <strong data-i18n="opportunity_verdict">Opportunity Verdict:</strong>
+                  <span id="comp-verdict-text"></span>
+                </div>
+
+                <div class="table-container">
+                  <table class="data-table" id="table-competitors">
+                    <thead>
+                      <tr>
+                        <th data-i18n="asin">ASIN</th>
+                        <th>Title</th>
+                        <th data-i18n="brand">Brand</th>
+                        <th data-i18n="current_price">Price</th>
+                        <th data-i18n="rating">Rating</th>
+                        <th data-i18n="reviews">Reviews</th>
+                        <th>Badge</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-competitors"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- FBA Profit Calculator -->
+        <div class="section-block calculator-section">
+          <h3 class="section-heading" data-i18n="calculator_section">FBA Profit &amp; Margin Calculator</h3>
+          
+          <div class="calc-card">
+            <h4 class="calc-config-title" data-i18n="calc_config">Configure Unit Economics &amp; Sourcing Cost</h4>
+            
+            <div class="calc-inputs-grid">
+              <div class="calc-input-group">
+                <label data-i18n="selling_price">Selling Price (EGP)</label>
+                <input type="number" id="calc-selling-price" min="0" step="5" value="100">
+              </div>
+              <div class="calc-input-group">
+                <label data-i18n="unit_cost">Unit Sourcing / Purchase Cost (EGP)</label>
+                <input type="number" id="calc-unit-cost" min="0" step="5" value="40">
+              </div>
+              <div class="calc-input-group">
+                <label data-i18n="referral_pct">Amazon Referral Fee %</label>
+                <input type="number" id="calc-referral-pct" min="0" step="0.5" value="10">
+              </div>
+              <div class="calc-input-group">
+                <div class="label-with-tier">
+                  <label data-i18n="fba_fee">FBA Fulfillment Fee (EGP)</label>
+                  <span id="calc-fba-tier" class="tier-pill">Standard Parcel</span>
+                </div>
+                <input type="number" id="calc-fba-fee" min="0" step="1" value="24.5">
+              </div>
+              <div class="calc-input-group">
+                <label data-i18n="stock_batch">Stock Batch Quantity</label>
+                <input type="number" id="calc-batch-qty" min="1" step="10" value="100">
+              </div>
+              <div class="calc-input-group highlight-box">
+                <label data-i18n="working_capital">Working Capital Needed</label>
+                <span id="calc-working-capital" class="calc-live-metric">4,000.00 EGP</span>
+              </div>
+            </div>
+
+            <div class="calc-results-bar">
+              <div class="calc-res-item">
+                <span class="calc-res-label" data-i18n="net_profit">Net Profit / Unit</span>
+                <span id="calc-res-profit" class="calc-res-val positive">0.00 EGP</span>
+              </div>
+              <div class="calc-res-item">
+                <span class="calc-res-label" data-i18n="profit_margin">Profit Margin</span>
+                <span id="calc-res-margin" class="calc-res-val">0.0%</span>
+              </div>
+              <div class="calc-res-item">
+                <span class="calc-res-label" data-i18n="roi">ROI</span>
+                <span id="calc-res-roi" class="calc-res-val">0.0%</span>
+              </div>
+              <div class="calc-res-item">
+                <span class="calc-res-label" data-i18n="batch_profit">Batch Profit</span>
+                <span id="calc-res-batch-profit" class="calc-res-val positive">0.00 EGP</span>
+              </div>
+            </div>
+
+            <!-- Fee Breakdown Details Accordion -->
+            <details class="fee-breakdown-details">
+              <summary data-i18n="fee_breakdown_expander">View Fee Breakdown &amp; Break-Even Targets</summary>
+              <div class="fee-breakdown-content">
+                <ul class="breakdown-list">
+                  <li><strong data-i18n="fee_referral">Amazon Referral Fee:</strong> <span id="fee-breakdown-ref">0.00 EGP</span></li>
+                  <li><strong data-i18n="fee_fba">FBA Fulfillment Fee:</strong> <span id="fee-breakdown-fba">0.00 EGP</span></li>
+                  <li><strong data-i18n="fee_ads">Estimated Ad Spend (8%):</strong> <span id="fee-breakdown-ads">0.00 EGP</span></li>
+                  <li><strong data-i18n="fee_returns">Estimated Return Provision (3%):</strong> <span id="fee-breakdown-returns">0.00 EGP</span></li>
+                  <li><strong data-i18n="fee_vat">14% VAT on Amazon Fees:</strong> <span id="fee-breakdown-vat">0.00 EGP</span></li>
+                  <li class="accent-line"><strong data-i18n="max_sourcing_cost">Max Sourcing Cost to Break Even:</strong> <code id="fee-breakdown-maxcost">0.00 EGP</code></li>
+                  <li class="accent-line"><strong data-i18n="breakeven_ads_limit">Break-Even Ad Spend Limit:</strong> <code id="fee-breakdown-acos">0.0%</code></li>
+                </ul>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- Price & BSR History Interactive Charts -->
+        <div class="section-block">
+          <h3 class="section-heading" data-i18n="history_section">Price &amp; BSR History</h3>
+          <div class="charts-grid">
+            <div class="chart-wrapper">
+              <div class="chart-header">
+                <h4 class="chart-title" data-i18n="chart_price_title">Price Changes Over Time</h4>
+                <span class="chart-unit">EGP</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chart-price-canvas"></canvas>
+                <div id="chart-price-tooltip" class="chart-tooltip hidden"></div>
+              </div>
+              <p id="chart-price-empty" class="empty-note hidden" data-i18n="no_price_history">No price history recorded yet for this product.</p>
+            </div>
+
+            <div class="chart-wrapper">
+              <div class="chart-header">
+                <h4 class="chart-title" data-i18n="chart_bsr_title">Best Sellers Rank (BSR) Over Time</h4>
+                <span class="chart-unit" data-i18n="chart_rank_axis">Rank #</span>
+              </div>
+              <div class="chart-canvas-container">
+                <canvas id="chart-bsr-canvas"></canvas>
+                <div id="chart-bsr-tooltip" class="chart-tooltip hidden"></div>
+              </div>
+              <p id="chart-bsr-empty" class="empty-note hidden" data-i18n="no_bsr_history">No BSR history recorded for this product.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 2: Comparison Matrix View -->
+      <section id="view-compare" class="view-panel hidden">
+        <div class="view-header">
+          <h1 class="view-title" data-i18n="comparison_title">Product Comparison Matrix</h1>
+          <div class="compare-search">
+            <input type="text" id="input-compare-filter" placeholder="Search tracked products...">
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table" id="table-comparison">
+            <thead>
+              <tr>
+                <th data-i18n="asin">ASIN</th>
+                <th>Product</th>
+                <th data-i18n="current_price">Price</th>
+                <th data-i18n="rating">Rating</th>
+                <th data-i18n="reviews">Reviews</th>
+                <th data-i18n="bsr">BSR</th>
+                <th data-i18n="est_sales">Est. Sales</th>
+                <th data-i18n="opp_score">Opp Score</th>
+                <th data-i18n="in_stock">In Stock</th>
+                <th data-i18n="primary_seller">Seller</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-comparison">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- View 3: AI Product Hunter View -->
+      <section id="view-hunter" class="view-panel hidden">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title" data-i18n="hunter_title">AI Product Hunter</h1>
+            <p class="view-subtitle" data-i18n="hunter_subtitle">Discover high-opportunity product niches on Amazon Egypt</p>
+          </div>
+        </div>
+
+        <div id="hunter-flash" class="alert-box alert-success hidden"></div>
+
+        <div class="hunter-search-card">
+          <div class="hunter-inputs-row">
+            <div class="hunter-input-col query-col">
+              <label data-i18n="hunter_query_label">Niche Keyword / Category</label>
+              <input type="text" id="hunter-query-input" data-i18n-ph="hunter_query_placeholder" placeholder="e.g. kitchen storage, wireless earbuds">
+            </div>
+            <div class="hunter-input-col">
+              <label data-i18n="hunter_max_price">Max Price (EGP)</label>
+              <input type="number" id="hunter-max-price" value="3000" step="250">
+            </div>
+            <div class="hunter-input-col slider-col">
+              <div class="slider-label-row">
+                <label data-i18n="hunter_min_score">Min Opportunity Score</label>
+                <span id="hunter-score-display" class="slider-val">50</span>
+              </div>
+              <input type="range" id="hunter-min-score" min="0" max="100" value="50">
+            </div>
+          </div>
+          <button type="button" id="btn-hunter-scan" class="btn btn-primary" data-i18n="hunter_scan_btn">Find Top Opportunities</button>
+        </div>
+
+        <div id="hunter-results-container" class="hunter-results-container">
+          <p id="hunter-count-label" class="results-count-label hidden"></p>
+          <div id="hunter-cards-list" class="hunter-cards-list"></div>
+          <p id="hunter-empty-note" class="empty-note hidden" data-i18n="hunter_no_results">No products matched the filter criteria.</p>
+        </div>
+
+        <p class="hunter-disclaimer" data-i18n="hunter_disclaimer">Scores are estimated based on public catalog signals (ratings, review velocity, and pricing).</p>
+      </section>
+    </main>
+  </div>
+
+  <!-- Seller Details Modal Dialog -->
+  <dialog id="modal-seller-details" class="app-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="seller-modal-title" data-i18n="seller_dialog_title">Seller Details</h3>
+        <button type="button" id="btn-close-seller-modal" class="modal-close-btn" aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <h2 id="modal-seller-name" class="seller-display-name">Seller Name</h2>
+        <p id="modal-seller-business" class="seller-business-name"></p>
+
+        <div class="metrics-row modal-metrics">
+          <div class="metric-box">
+            <span class="m-label" data-i18n="rating">Rating</span>
+            <span id="modal-seller-rating" class="m-value">—</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-label" data-i18n="total_ratings">Total Ratings</span>
+            <span id="modal-seller-ratings-count" class="m-value">—</span>
+          </div>
+          <div class="metric-box">
+            <span class="m-label" data-i18n="positive_pct">Positive</span>
+            <span id="modal-seller-positive-pct" class="m-value">—</span>
+          </div>
+        </div>
+
+        <div id="modal-seller-about-section" class="modal-about-section hidden">
+          <h4 data-i18n="about_seller">About Seller:</h4>
+          <p id="modal-seller-about-text" class="about-text"></p>
+        </div>
+
+        <div class="modal-footer-actions">
+          <a id="modal-seller-link" href="#" target="_blank" rel="noopener" class="btn btn-primary">
+            <span data-i18n="view_seller_amz">View Seller on Amazon</span>
+            <svg class="icon icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Load Scripts -->
+  <script src="locales.js"></script>
+  <script src="storage.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

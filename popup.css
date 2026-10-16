@@ -1,15 +1,37 @@
-:root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-card: #1e293b;
-  --text-primary: #f8fafc;
-  --text-muted: #94a3b8;
+/* Moraqeb Extension Popup Styles */
+:root,
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --text-primary: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
   --accent-primary: #2563eb;
   --accent-primary-hover: #1d4ed8;
-  --border-color: #334155;
   --success-color: #10b981;
   --danger-color: #ef4444;
   --warning-color: #f59e0b;
+  --pill-bg: #eff6ff;
+  --pill-text: #2563eb;
+  --pill-border: #bfdbfe;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #090d16;
+  --bg-secondary: #111827;
+  --bg-card: #111827;
+  --text-primary: #f9fafb;
+  --text-muted: #9ca3af;
+  --border-color: #1f2937;
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --success-color: #10b981;
+  --danger-color: #ef4444;
+  --warning-color: #f59e0b;
+  --pill-bg: #1e293b;
+  --pill-text: #93c5fd;
+  --pill-border: #334155;
 }
 
 * {
@@ -25,6 +47,7 @@ body {
   color: var(--text-primary);
   font-size: 13px;
   line-height: 1.5;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .extension-container {
@@ -45,13 +68,18 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.brand-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
 }
 
 .logo-text {
   font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.5px;
+  font-size: 15px;
   color: var(--text-primary);
 }
 
@@ -59,7 +87,7 @@ body {
   font-size: 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 4px;
   color: var(--text-muted);
 }
@@ -71,12 +99,14 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-muted);
+  font-weight: 500;
 }
 
 .badge.active {
   background: rgba(16, 185, 129, 0.15);
   border-color: var(--success-color);
   color: var(--success-color);
+  font-weight: 600;
 }
 
 .content {
@@ -118,27 +148,33 @@ body {
 
 #state-empty {
   text-align: center;
-  padding: 10px 0;
+  padding: 14px 0;
 }
 
-.empty-icon {
-  font-size: 12px;
-  font-weight: 600;
+.empty-icon-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.empty-icon-svg {
+  width: 36px;
+  height: 36px;
   color: var(--text-muted);
-  margin-bottom: 6px;
-  letter-spacing: 1px;
 }
 
 #state-empty h3 {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  color: var(--text-primary);
 }
 
 #state-empty p {
   color: var(--text-muted);
   font-size: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  line-height: 1.4;
 }
 
 .product-preview {
@@ -155,16 +191,18 @@ body {
   height: 60px;
   flex-shrink: 0;
   background: #ffffff;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: 4px;
 }
 
 .product-image-wrap img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -182,6 +220,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
 .badges-row {
@@ -198,9 +237,9 @@ body {
 }
 
 .pill-asin {
-  background: rgba(37, 99, 235, 0.15);
-  border: 1px solid rgba(37, 99, 235, 0.3);
-  color: #93c5fd;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  color: var(--pill-text);
 }
 
 .pill-stock {
@@ -241,6 +280,7 @@ body {
   font-size: 13px;
   font-weight: 700;
   margin-top: 2px;
+  color: var(--text-primary);
 }
 
 .seller-line {
@@ -266,9 +306,18 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  border: none;
+  border: 1px solid transparent;
   transition: all 0.15s ease;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .btn-primary {
@@ -282,7 +331,7 @@ body {
 
 .btn-secondary {
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border-color: var(--border-color);
   color: var(--text-primary);
 }
 
@@ -315,4 +364,13 @@ body {
   text-align: center;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+/* RTL Support */
+[dir="rtl"] {
+  text-align: right;
+}
+
+[dir="rtl"] .btn {
+  flex-direction: row-reverse;
 }
