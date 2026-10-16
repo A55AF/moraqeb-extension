@@ -23,7 +23,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stateLoading = document.getElementById('state-loading');
   const stateEmpty = document.getElementById('state-empty');
   const stateProduct = document.getElementById('state-product');
-  const statusBadge = document.getElementById('status-badge');
 
   const prodImg = document.getElementById('prod-img');
   const prodTitle = document.getElementById('prod-title');
@@ -120,9 +119,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       metricReviews.textContent = p.reviews_count ? Number(p.reviews_count).toLocaleString() : '—';
       prodSeller.textContent = p.seller || 'Amazon';
 
-      statusBadge.textContent = existing ? t('status_tracked', lang) : t('status_active', lang);
-      statusBadge.classList.add('active');
-
       if (existing) {
         trackBtnLabel.textContent = t('update_in_moraqeb', lang);
       } else {
@@ -138,7 +134,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
           await StorageManager.saveProduct(p);
-          statusBadge.textContent = t('status_tracked', lang);
           showFeedback(`${t('scrape_success', lang)}: ${p.asin}`);
           trackBtnLabel.textContent = t('update_in_moraqeb', lang);
         } catch (err) {

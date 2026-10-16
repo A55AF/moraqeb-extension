@@ -83,31 +83,6 @@ body {
   color: var(--text-primary);
 }
 
-.version-tag {
-  font-size: 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 1px 6px;
-  border-radius: 4px;
-  color: var(--text-muted);
-}
-
-.badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.badge.active {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: var(--success-color);
-  color: var(--success-color);
-  font-weight: 600;
-}
 
 .content {
   min-height: 140px;
@@ -358,13 +333,6 @@ body {
   border: 1px solid var(--danger-color);
 }
 
-.footer {
-  border-top: 1px solid var(--border-color);
-  padding-top: 8px;
-  text-align: center;
-  font-size: 10px;
-  color: var(--text-muted);
-}
 
 /* RTL Support */
 [dir="rtl"] {
