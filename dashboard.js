@@ -164,20 +164,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ==========================================
   // Sidebar Fold & Unfold Logic
   // ==========================================
-  function collapseSidebar() {
+  function collapseSidebar(save = true) {
     appSidebar.classList.add("collapsed");
     btnSidebarExpand.classList.remove("hidden");
-    StorageManager.saveSettings({ sidebar_collapsed: true });
+    if (save) {
+      StorageManager.saveSettings({ sidebar_collapsed: true });
+    }
   }
 
-  function expandSidebar() {
+  function expandSidebar(save = true) {
     appSidebar.classList.remove("collapsed");
     btnSidebarExpand.classList.add("hidden");
-    StorageManager.saveSettings({ sidebar_collapsed: false });
+    if (save) {
+      StorageManager.saveSettings({ sidebar_collapsed: false });
+    }
   }
 
-  btnSidebarCollapse.addEventListener("click", collapseSidebar);
-  btnSidebarExpand.addEventListener("click", expandSidebar);
+  btnSidebarCollapse.addEventListener("click", () => collapseSidebar(true));
+  btnSidebarExpand.addEventListener("click", () => expandSidebar(true));
 
   // ==========================================
   // Theme Switching (Dark & Light)
@@ -1346,9 +1350,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     applyTheme(currentTheme);
 
     if (settings.sidebar_collapsed) {
-      collapseSidebar();
+      collapseSidebar(false);
     } else {
-      expandSidebar();
+      expandSidebar(false);
     }
 
     products = await StorageManager.getProducts();
@@ -1365,6 +1369,40 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     updateProductDropdown();
     applyTranslations(currentLang);
+  }
+
+  // Live Sync with Extension Storage (e.g. settings or products changed from popup)
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === "local" && changes[STORAGE_KEYS.SETTINGS]) {
+        const newSettings = changes[STORAGE_KEYS.SETTINGS].newValue;
+        if (newSettings) {
+          if (newSettings.theme && newSettings.theme !== currentTheme) {
+            applyTheme(newSettings.theme);
+          }
+          if (newSettings.lang && newSettings.lang !== currentLang) {
+            applyTranslations(newSettings.lang);
+          }
+          if (newSettings.sidebar_collapsed !== undefined) {
+            const isCurrentlyCollapsed = appSidebar.classList.contains("collapsed");
+            if (newSettings.sidebar_collapsed !== isCurrentlyCollapsed) {
+              if (newSettings.sidebar_collapsed) {
+                collapseSidebar(false);
+              } else {
+                expandSidebar(false);
+              }
+            }
+          }
+        }
+      }
+      if (areaName === "local" && changes[STORAGE_KEYS.PRODUCTS]) {
+        StorageManager.getProducts().then((latestProducts) => {
+          products = latestProducts;
+          updateProductDropdown();
+          renderCurrentMode();
+        });
+      }
+    });
   }
 
   await initDashboard();

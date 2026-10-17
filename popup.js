@@ -4,21 +4,13 @@
 document.addEventListener('DOMContentLoaded', async () => {
   // Load settings (theme & language)
   const settings = await StorageManager.getSettings();
-  const lang = settings.lang || 'en';
-  const theme = settings.theme || 'dark';
+  let currentLang = settings.lang || 'en';
+  let currentTheme = settings.theme || 'dark';
 
-  document.documentElement.setAttribute('data-theme', theme);
-  document.documentElement.setAttribute('lang', lang);
-  document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
-
-  // Translate static labels
-  document.querySelectorAll('[data-i18n]').forEach((el) => {
-    const key = el.getAttribute('data-i18n');
-    const translation = t(key, lang);
-    if (translation) {
-      el.textContent = translation;
-    }
-  });
+  const btnThemeDark = document.getElementById('btn-theme-dark');
+  const btnThemeLight = document.getElementById('btn-theme-light');
+  const btnLangEn = document.getElementById('btn-lang-en');
+  const btnLangAr = document.getElementById('btn-lang-ar');
 
   const stateLoading = document.getElementById('state-loading');
   const stateEmpty = document.getElementById('state-empty');
@@ -42,6 +34,99 @@ document.addEventListener('DOMContentLoaded', async () => {
   const actionFeedback = document.getElementById('action-feedback');
 
   let activeProduct = null;
+
+  function updateThemeUI(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      btnThemeDark.classList.add('active');
+      btnThemeLight.classList.remove('active');
+    } else {
+      btnThemeLight.classList.add('active');
+      btnThemeDark.classList.remove('active');
+    }
+  }
+
+  function updateLangUI(lang) {
+    document.documentElement.setAttribute('lang', lang);
+    document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+
+    if (lang === 'ar') {
+      btnLangAr.classList.add('active');
+      btnLangEn.classList.remove('active');
+    } else {
+      btnLangEn.classList.add('active');
+      btnLangAr.classList.remove('active');
+    }
+
+    // Re-translate all elements with data-i18n
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      const translation = t(key, lang);
+      if (translation) {
+        el.textContent = translation;
+      }
+    });
+
+    // Update dynamic product badges if loaded
+    if (activeProduct) {
+      badgeStock.textContent = activeProduct.in_stock ? t('in_stock', lang) : t('out_of_stock', lang);
+      StorageManager.getProduct(activeProduct.asin).then((existing) => {
+        trackBtnLabel.textContent = existing ? t('update_in_moraqeb', lang) : t('track_in_moraqeb', lang);
+      });
+    }
+  }
+
+  // Initialize UI state
+  updateThemeUI(currentTheme);
+  updateLangUI(currentLang);
+
+  // Settings click handlers
+  btnThemeDark.addEventListener('click', async () => {
+    if (currentTheme === 'dark') return;
+    currentTheme = 'dark';
+    updateThemeUI(currentTheme);
+    await StorageManager.saveSettings({ theme: currentTheme });
+  });
+
+  btnThemeLight.addEventListener('click', async () => {
+    if (currentTheme === 'light') return;
+    currentTheme = 'light';
+    updateThemeUI(currentTheme);
+    await StorageManager.saveSettings({ theme: currentTheme });
+  });
+
+  btnLangEn.addEventListener('click', async () => {
+    if (currentLang === 'en') return;
+    currentLang = 'en';
+    updateLangUI(currentLang);
+    await StorageManager.saveSettings({ lang: currentLang });
+  });
+
+  btnLangAr.addEventListener('click', async () => {
+    if (currentLang === 'ar') return;
+    currentLang = 'ar';
+    updateLangUI(currentLang);
+    await StorageManager.saveSettings({ lang: currentLang });
+  });
+
+  // Listen for live storage changes (e.g. from dashboard)
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
+        const newSettings = changes[STORAGE_KEYS.SETTINGS].newValue;
+        if (newSettings) {
+          if (newSettings.theme && newSettings.theme !== currentTheme) {
+            currentTheme = newSettings.theme;
+            updateThemeUI(currentTheme);
+          }
+          if (newSettings.lang && newSettings.lang !== currentLang) {
+            currentLang = newSettings.lang;
+            updateLangUI(currentLang);
+          }
+        }
+      }
+    });
+  }
 
   function showView(view) {
     stateLoading.classList.add('hidden');
@@ -105,7 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         prodImg.src = 'icons/icon48.png';
       }
 
-      badgeStock.textContent = p.in_stock ? t('in_stock', lang) : t('out_of_stock', lang);
+      badgeStock.textContent = p.in_stock ? t('in_stock', currentLang) : t('out_of_stock', currentLang);
       badgeStock.className = `pill ${p.in_stock ? 'pill-stock' : 'pill-asin'}`;
 
       if (p.is_fba) {
@@ -120,9 +205,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       prodSeller.textContent = p.seller || 'Amazon';
 
       if (existing) {
-        trackBtnLabel.textContent = t('update_in_moraqeb', lang);
+        trackBtnLabel.textContent = t('update_in_moraqeb', currentLang);
       } else {
-        trackBtnLabel.textContent = t('track_in_moraqeb', lang);
+        trackBtnLabel.textContent = t('track_in_moraqeb', currentLang);
       }
 
       showView(stateProduct);
@@ -130,16 +215,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Track button event
       btnTrack.onclick = async () => {
         btnTrack.disabled = true;
-        trackBtnLabel.textContent = lang === 'ar' ? 'جاري الحفظ...' : 'Saving...';
+        trackBtnLabel.textContent = currentLang === 'ar' ? 'جاري الحفظ...' : 'Saving...';
 
         try {
           await StorageManager.saveProduct(p);
-          showFeedback(`${t('scrape_success', lang)}: ${p.asin}`);
-          trackBtnLabel.textContent = t('update_in_moraqeb', lang);
+          showFeedback(`${t('scrape_success', currentLang)}: ${p.asin}`);
+          trackBtnLabel.textContent = t('update_in_moraqeb', currentLang);
         } catch (err) {
           console.error('Error saving product:', err);
-          showFeedback(t('scrape_error', lang), 'error');
-          trackBtnLabel.textContent = t('track_in_moraqeb', lang);
+          showFeedback(t('scrape_error', currentLang), 'error');
+          trackBtnLabel.textContent = t('track_in_moraqeb', currentLang);
         } finally {
           btnTrack.disabled = false;
         }

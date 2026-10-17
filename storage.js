@@ -229,9 +229,22 @@ const StorageManager = {
     return (await StorageAdapter.get(STORAGE_KEYS.SETTINGS, { lang: "en", theme: "dark", sidebar_collapsed: false })) || { lang: "en", theme: "dark", sidebar_collapsed: false };
   },
 
+  _settingsQueue: Promise.resolve(),
+
   async saveSettings(settings) {
-    const current = await this.getSettings();
-    await StorageAdapter.set(STORAGE_KEYS.SETTINGS, { ...current, ...settings });
+    this._settingsQueue = this._settingsQueue
+      .then(async () => {
+        const current = await this.getSettings();
+        await StorageAdapter.set(STORAGE_KEYS.SETTINGS, { ...current, ...settings });
+      })
+      .catch((err) => {
+        console.error("Storage saveSettings error:", err);
+      });
+    return this._settingsQueue;
+  },
+
+  async setSettings(settings) {
+    return this.saveSettings(settings);
   },
 
   async exportData() {
