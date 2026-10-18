@@ -1,16 +1,21 @@
 // Moraqeb Extension Content Script
-// Extracts comprehensive product intelligence from active Amazon listing pages
+// Extracts comprehensive product intelligence from active Amazon listing pages or parsed DOMs
 
-function extractASIN() {
-  const urlMatch = window.location.pathname.match(/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-  if (urlMatch && urlMatch[1]) {
-    return urlMatch[1].toUpperCase();
-  }
-  const asinInput = document.querySelector('input#ASIN, input[name="ASIN"]');
+function extractASIN(doc = document, url = (typeof window !== 'undefined' ? window.location.href : '')) {
+  try {
+    if (url) {
+      const pathname = new URL(url, 'https://www.amazon.eg').pathname;
+      const urlMatch = pathname.match(/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+      if (urlMatch && urlMatch[1]) {
+        return urlMatch[1].toUpperCase();
+      }
+    }
+  } catch (_) {}
+  const asinInput = doc ? doc.querySelector('input#ASIN, input[name="ASIN"]') : null;
   if (asinInput && asinInput.value) {
     return asinInput.value.trim().toUpperCase();
   }
-  const asinNode = document.querySelector('[data-asin]');
+  const asinNode = doc ? doc.querySelector('[data-asin]') : null;
   if (asinNode) {
     const val = asinNode.getAttribute('data-asin');
     if (val && val.length === 10) return val.toUpperCase();
@@ -18,31 +23,32 @@ function extractASIN() {
   return null;
 }
 
-function extractParentASIN() {
-  const parentInput = document.querySelector('input#parentAsin, input[name="parentAsin"]');
+function extractParentASIN(doc = document) {
+  const parentInput = doc ? doc.querySelector('input#parentAsin, input[name="parentAsin"]') : null;
   if (parentInput && parentInput.value) {
     return parentInput.value.trim().toUpperCase();
   }
   return null;
 }
 
-function extractTitle() {
-  const titleEl = document.querySelector('#productTitle') || document.querySelector('h1#title');
+function extractTitle(doc = document) {
+  const titleEl = doc ? (doc.querySelector('#productTitle') || doc.querySelector('h1#title')) : null;
   if (titleEl && titleEl.textContent) {
     return titleEl.textContent.trim();
   }
-  return document.title.replace(/\s*:\s*Amazon.*$/i, '').trim();
+  return ((doc && doc.title) ? doc.title : '').replace(/\s*:\s*Amazon.*$/i, '').trim();
 }
 
-function extractBrand() {
-  const byline = document.querySelector('#bylineInfo') || document.querySelector('#brand');
+function extractBrand(doc = document) {
+  const byline = doc ? (doc.querySelector('#bylineInfo') || doc.querySelector('#brand')) : null;
   if (byline && byline.textContent) {
     return byline.textContent.replace(/^(Brand:|Visit the|Store)\s*/i, '').trim();
   }
   return null;
 }
 
-function extractPrice() {
+function extractPrice(doc = document) {
+  if (!doc) return { raw: '—', amount: null };
   const selectors = [
     '#corePrice_feature_div .a-price .a-offscreen',
     '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
@@ -54,7 +60,7 @@ function extractPrice() {
   ];
 
   for (const sel of selectors) {
-    const el = document.querySelector(sel);
+    const el = doc.querySelector(sel);
     if (el && el.textContent) {
       const raw = el.textContent.trim();
       const numMatch = raw.replace(/,/g, '').match(/[\d.]+/);
@@ -69,10 +75,11 @@ function extractPrice() {
   return { raw: '—', amount: null };
 }
 
-function extractRating() {
-  const ratingEl = document.querySelector('#acrPopover .a-icon-alt') ||
-                   document.querySelector('#averageCustomerReviews .a-icon-alt') ||
-                   document.querySelector('.a-icon-star .a-icon-alt');
+function extractRating(doc = document) {
+  if (!doc) return null;
+  const ratingEl = doc.querySelector('#acrPopover .a-icon-alt') ||
+                   doc.querySelector('#averageCustomerReviews .a-icon-alt') ||
+                   doc.querySelector('.a-icon-star .a-icon-alt');
   if (ratingEl && ratingEl.textContent) {
     const m = ratingEl.textContent.match(/([\d.]+)/);
     if (m) return parseFloat(m[1]);
@@ -80,8 +87,9 @@ function extractRating() {
   return null;
 }
 
-function extractReviewCount() {
-  const countEl = document.querySelector('#acrCustomerReviewText');
+function extractReviewCount(doc = document) {
+  if (!doc) return null;
+  const countEl = doc.querySelector('#acrCustomerReviewText');
   if (countEl && countEl.textContent) {
     const clean = countEl.textContent.replace(/[^\d]/g, '');
     if (clean) return parseInt(clean, 10);
@@ -89,13 +97,15 @@ function extractReviewCount() {
   return null;
 }
 
-function extractSellerInfo() {
+function extractSellerInfo(doc = document) {
   let sellerName = 'Amazon';
   let isFba = false;
   let sellerLink = null;
   let sellerId = null;
 
-  const sellerLinkEl = document.querySelector('#sellerProfileTriggerId');
+  if (!doc) return { name: sellerName, is_fba: isFba, link: sellerLink, id: sellerId };
+
+  const sellerLinkEl = doc.querySelector('#sellerProfileTriggerId');
   if (sellerLinkEl && sellerLinkEl.textContent) {
     sellerName = sellerLinkEl.textContent.trim();
     if (sellerLinkEl.href) {
@@ -105,7 +115,7 @@ function extractSellerInfo() {
     }
   }
 
-  const merchantInfo = document.querySelector('#merchant-info');
+  const merchantInfo = doc.querySelector('#merchant-info');
   if (merchantInfo && merchantInfo.textContent) {
     const text = merchantInfo.textContent.trim();
     isFba = text.toLowerCase().includes('amazon') && (text.toLowerCase().includes('fulfilled') || text.toLowerCase().includes('مشحون من قبل أمازون'));
@@ -116,7 +126,7 @@ function extractSellerInfo() {
 
   // FBA badge check
   if (!isFba) {
-    const fulfillmentBadge = document.querySelector('#fulfillerInfoFeature_feature_div, #SSOFpopoverLink');
+    const fulfillmentBadge = doc.querySelector('#fulfillerInfoFeature_feature_div, #SSOFpopoverLink');
     if (fulfillmentBadge && fulfillmentBadge.textContent.toLowerCase().includes('amazon')) {
       isFba = true;
     }
@@ -125,8 +135,9 @@ function extractSellerInfo() {
   return { name: sellerName, is_fba: isFba, link: sellerLink, id: sellerId };
 }
 
-function extractImages() {
+function extractImages(doc = document) {
   const imageMap = new Map(); // imageId -> high-res url
+  if (!doc) return [];
 
   function addCleanImage(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return;
@@ -146,7 +157,7 @@ function extractImages() {
 
   // 1. Try embedded Amazon image script (colorImages.initial)
   try {
-    const scripts = document.querySelectorAll('script');
+    const scripts = doc.querySelectorAll('script');
     for (const s of scripts) {
       const content = s.textContent;
       if (content && content.includes("'colorImages':") && content.includes("'initial':")) {
@@ -168,7 +179,7 @@ function extractImages() {
   }
 
   // 2. Main landing image (pick single highest-res from dynamic images)
-  const landing = document.querySelector('#landingImage') || document.querySelector('#imgBlkFront');
+  const landing = doc.querySelector('#landingImage') || doc.querySelector('#imgBlkFront');
   if (landing) {
     const dyn = landing.getAttribute('data-a-dynamic-image');
     if (dyn) {
@@ -190,7 +201,7 @@ function extractImages() {
   }
 
   // 3. Main gallery thumbnails (#altImages) excluding video, swatches, 360
-  const altImgs = document.querySelectorAll('#altImages ul li.item:not(.video) img, #imageBlock .regularAltImageViewLayout img');
+  const altImgs = doc.querySelectorAll('#altImages ul li.item:not(.video) img, #imageBlock .regularAltImageViewLayout img');
   altImgs.forEach((img) => {
     // Avoid swatch thumbnails
     if (img.closest('.swatchAvailable') || img.closest('#variation_color_name')) return;
@@ -201,16 +212,18 @@ function extractImages() {
   return Array.from(imageMap.values()).slice(0, 10);
 }
 
-function extractAvailability() {
-  const availEl = document.querySelector('#availability');
+function extractAvailability(doc = document) {
+  if (!doc) return true;
+  const availEl = doc.querySelector('#availability');
   if (!availEl) return true;
   const text = availEl.textContent.toLowerCase();
   return !text.includes('currently unavailable') && !text.includes('غير متوفر') && !text.includes('out of stock');
 }
 
-function extractBullets() {
+function extractBullets(doc = document) {
   const bullets = [];
-  const listItems = document.querySelectorAll('#feature-bullets ul li span.a-list-item, #featurebullets_feature_div li span.a-list-item');
+  if (!doc) return bullets;
+  const listItems = doc.querySelectorAll('#feature-bullets ul li span.a-list-item, #featurebullets_feature_div li span.a-list-item');
   listItems.forEach((li) => {
     const t = li.textContent.trim();
     if (t && !t.startsWith('›') && t.length > 5) {
@@ -220,16 +233,17 @@ function extractBullets() {
   return bullets;
 }
 
-function extractDescription() {
-  const descEl = document.querySelector('#productDescription p, #productDescription') ||
-                 document.querySelector('#aplus_feature_div') ||
-                 document.querySelector('#bookDescription_feature_div');
+function extractDescription(doc = document) {
+  if (!doc) return '';
+  const descEl = doc.querySelector('#productDescription p, #productDescription') ||
+                 doc.querySelector('#aplus_feature_div') ||
+                 doc.querySelector('#bookDescription_feature_div');
   return descEl ? descEl.textContent.trim().replace(/\s+/g, ' ') : '';
 }
 
-function extractDimensions() {
-  // Check detail bullets (often table or list)
-  const detailBullets = document.querySelectorAll('#detailBullets_feature_div li, #prodDetails table tr');
+function extractDimensions(doc = document) {
+  if (!doc) return null;
+  const detailBullets = doc.querySelectorAll('#detailBullets_feature_div li, #prodDetails table tr');
   for (const row of detailBullets) {
     const text = row.textContent.toLowerCase();
     if (text.includes('dimension') || text.includes('أبعاد') || text.includes('item dimensions') || text.includes('package dimensions')) {
@@ -243,8 +257,9 @@ function extractDimensions() {
   return null;
 }
 
-function extractBSR() {
-  const detailBullets = document.querySelectorAll('#detailBullets_feature_div li, #prodDetails table tr, #SalesRank');
+function extractBSR(doc = document) {
+  if (!doc) return null;
+  const detailBullets = doc.querySelectorAll('#detailBullets_feature_div li, #prodDetails table tr, #SalesRank');
   for (const row of detailBullets) {
     const text = row.textContent;
     if (text.includes('Best Sellers Rank') || text.includes('الأكثر مبيعاً')) {
@@ -261,9 +276,10 @@ function extractBSR() {
   return null;
 }
 
-function extractCategories() {
+function extractCategories(doc = document) {
   const cats = [];
-  const links = document.querySelectorAll('#wayfinding-breadcrumbs_feature_div ul li a');
+  if (!doc) return cats;
+  const links = doc.querySelectorAll('#wayfinding-breadcrumbs_feature_div ul li a');
   links.forEach((a) => {
     const t = a.textContent.trim();
     if (t) cats.push(t);
@@ -271,17 +287,19 @@ function extractCategories() {
   return cats;
 }
 
-function extractBadges() {
-  const isBestSeller = !!document.querySelector('#zeitgeistBadge, .badge-rectangle, .best-seller-badge');
-  const isAmazonChoice = !!document.querySelector('#acBadge_standard, .ac-badge-wrapper, [data-ac-badge]');
+function extractBadges(doc = document) {
+  if (!doc) return { is_best_seller: false, is_amazon_choice: false };
+  const isBestSeller = !!doc.querySelector('#zeitgeistBadge, .badge-rectangle, .best-seller-badge');
+  const isAmazonChoice = !!doc.querySelector('#acBadge_standard, .ac-badge-wrapper, [data-ac-badge]');
   return {
     is_best_seller: isBestSeller,
     is_amazon_choice: isAmazonChoice
   };
 }
 
-function extractBoughtPastMonth() {
-  const proofEl = document.querySelector('#social-proofing-faceout-title-tk_bought, .social-proofing-faceout');
+function extractBoughtPastMonth(doc = document) {
+  if (!doc) return null;
+  const proofEl = doc.querySelector('#social-proofing-faceout-title-tk_bought, .social-proofing-faceout');
   if (proofEl && proofEl.textContent) {
     const m = proofEl.textContent.match(/([0-9,]+)\+?\s*bought/i);
     if (m) {
@@ -291,9 +309,10 @@ function extractBoughtPastMonth() {
   return null;
 }
 
-function extractReviews() {
+function extractReviews(doc = document) {
   const reviews = [];
-  const reviewNodes = document.querySelectorAll('#cm-cr-dp-review-list .review, [data-hook="review"]');
+  if (!doc) return reviews;
+  const reviewNodes = doc.querySelectorAll('#cm-cr-dp-review-list .review, [data-hook="review"]');
   reviewNodes.forEach((node) => {
     const titleEl = node.querySelector('[data-hook="review-title"] span') || node.querySelector('.review-title');
     const ratingEl = node.querySelector('[data-hook="review-star-rating"] .a-icon-alt') || node.querySelector('.a-icon-star');
@@ -330,9 +349,10 @@ function extractReviews() {
   return reviews.slice(0, 10);
 }
 
-function extractSentimentAspects() {
+function extractSentimentAspects(doc = document) {
   const aspects = [];
-  const tags = document.querySelectorAll('#cr-summarization-attributes-list .a-declarative, .cr-summarization-attribute');
+  if (!doc) return aspects;
+  const tags = doc.querySelectorAll('#cr-summarization-attributes-list .a-declarative, .cr-summarization-attribute');
   tags.forEach((tag) => {
     const text = tag.textContent.trim();
     if (text) {
@@ -346,28 +366,30 @@ function extractSentimentAspects() {
   return aspects;
 }
 
-function getProductSnapshot() {
-  const asin = extractASIN();
+function getProductSnapshot(doc = document, url = (typeof window !== 'undefined' ? window.location.href : '')) {
+  const asin = extractASIN(doc, url);
   if (!asin) return null;
 
-  const parentAsin = extractParentASIN();
-  const title = extractTitle();
-  const brand = extractBrand();
-  const price = extractPrice();
-  const rating = extractRating();
-  const reviewsCount = extractReviewCount();
-  const sellerInfo = extractSellerInfo();
-  const images = extractImages();
-  const inStock = extractAvailability();
-  const bullets = extractBullets();
-  const description = extractDescription();
-  const dimensions = extractDimensions();
-  const bsrInfo = extractBSR();
-  const categories = extractCategories();
-  const badges = extractBadges();
-  const boughtPastMonth = extractBoughtPastMonth();
-  const reviews = extractReviews();
-  const aspects = extractSentimentAspects();
+  const parentAsin = extractParentASIN(doc);
+  const title = extractTitle(doc);
+  const brand = extractBrand(doc);
+  const price = extractPrice(doc);
+  const rating = extractRating(doc);
+  const reviewsCount = extractReviewCount(doc);
+  const sellerInfo = extractSellerInfo(doc);
+  const images = extractImages(doc);
+  const inStock = extractAvailability(doc);
+  const bullets = extractBullets(doc);
+  const description = extractDescription(doc);
+  const dimensions = extractDimensions(doc);
+  const bsrInfo = extractBSR(doc);
+  const categories = extractCategories(doc);
+  const badges = extractBadges(doc);
+  const boughtPastMonth = extractBoughtPastMonth(doc);
+  const reviews = extractReviews(doc);
+  const aspects = extractSentimentAspects(doc);
+
+  const finalUrl = url || (typeof window !== 'undefined' ? window.location.href : `https://www.amazon.eg/dp/${asin}`);
 
   return {
     asin,
@@ -375,7 +397,7 @@ function getProductSnapshot() {
     parent_code: parentAsin,
     title,
     brand,
-    link: window.location.href,
+    link: finalUrl,
     price: price.amount,
     price_formatted: price.raw,
     rating,
@@ -400,16 +422,28 @@ function getProductSnapshot() {
     bought_past_month: boughtPastMonth,
     reviews_list: reviews,
     sentiment_aspects: aspects,
-    url: window.location.href,
+    url: finalUrl,
     extracted_at: new Date().toISOString()
   };
 }
 
+// Expose on global window object so dashboard and popup can reuse it directly
+if (typeof window !== 'undefined') {
+  window.MoraqebScraper = {
+    getProductSnapshot,
+    extractASIN,
+    extractTitle,
+    extractPrice
+  };
+}
+
 // Respond to messages from popup or dashboard
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'GET_PRODUCT_DETAILS') {
-    const data = getProductSnapshot();
-    sendResponse({ success: !!data, data: data });
-  }
-  return true;
-});
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'GET_PRODUCT_DETAILS') {
+      const data = getProductSnapshot();
+      sendResponse({ success: !!data, data: data });
+    }
+    return true;
+  });
+}

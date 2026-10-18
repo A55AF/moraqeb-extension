@@ -219,6 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
           await StorageManager.saveProduct(p);
+          StorageManager.syncTrackedProductsToWorker().catch(() => {});
           showFeedback(`${t('scrape_success', currentLang)}: ${p.asin}`);
           trackBtnLabel.textContent = t('update_in_moraqeb', currentLang);
         } catch (err) {

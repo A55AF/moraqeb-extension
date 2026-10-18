@@ -92,11 +92,34 @@ const StorageManager = {
     const products = await this.getProducts();
     const existing = products[asin] || {};
 
+    // Option A: Preserve existing gallery images and main thumbnail if already present
+    let cleanImages = Array.isArray(existing.images) && existing.images.length > 0 ? existing.images : [];
+    if (cleanImages.length === 0) {
+      if (Array.isArray(data.images) && data.images.length > 0) {
+        cleanImages = data.images.map((img) => (typeof img === "string" ? img : img?.link || img?.url)).filter(Boolean);
+      } else if (data.image && typeof data.image === "string") {
+        cleanImages = [data.image];
+      }
+    }
+
+    const mainImage = existing.image || cleanImages[0] || (typeof data.image === "string" ? data.image : null);
+
+    // Sanitize categories to always be string[]
+    let cleanCategories = [];
+    if (Array.isArray(data.categories) && data.categories.length > 0) {
+      cleanCategories = data.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
+    } else if (Array.isArray(existing.categories) && existing.categories.length > 0) {
+      cleanCategories = existing.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
+    }
+
     const updated = {
       ...existing,
       ...data,
       code: asin,
       asin: asin,
+      images: cleanImages,
+      image: mainImage,
+      categories: cleanCategories,
       updated_at: new Date().toISOString()
     };
 
@@ -107,7 +130,7 @@ const StorageManager = {
     products[asin] = updated;
     await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
 
-    // Also record a price history entry if price is present
+    // Also record a price history entry if price is present (preserving historical timestamp if available)
     if (data.price !== undefined && data.price !== null) {
       await this.addPriceHistoryPoint(asin, {
         price: parseFloat(data.price),
@@ -115,7 +138,8 @@ const StorageManager = {
         reviews_count: data.reviews_count ? parseInt(data.reviews_count, 10) : null,
         rating: data.rating ? parseFloat(data.rating) : null,
         offer_count: data.offer_count ? parseInt(data.offer_count, 10) : null,
-        seller_name: data.seller || data.seller_name || null
+        seller_name: data.seller || data.seller_name || null,
+        timestamp: data.scraped_at || data.timestamp || null
       });
     }
 
@@ -147,6 +171,336 @@ const StorageManager = {
     const allHistory = await this.getAllPriceHistory();
     const filtered = allHistory.filter((h) => h.product_code !== cleanAsin);
     await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, filtered);
+
+    // Sync deletion to worker if configured
+    try {
+      const settings = await this.getSettings();
+      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
+      if (workerUrl) {
+        const headers = {};
+        if (settings.api_key) headers["X-Moraqeb-Key"] = settings.api_key;
+        fetch(`${workerUrl}/api/tracked-products?asin=${cleanAsin}`, { method: "DELETE", headers }).catch(() => {});
+      }
+    } catch (_) {}
+  },
+
+  _detectProductCountry(product) {
+    if (product.country) return product.country.toUpperCase();
+    const link = product.link || product.url || "";
+    if (link.includes("amazon.eg")) return "EG";
+    if (link.includes("amazon.com.mx")) return "MX";
+    if (link.includes("amazon.co.uk")) return "GB";
+    if (link.includes("amazon.de")) return "DE";
+    if (link.includes("amazon.fr")) return "FR";
+    if (link.includes("amazon.it")) return "IT";
+    if (link.includes("amazon.es")) return "ES";
+    if (link.includes("amazon.ae")) return "AE";
+    if (link.includes("amazon.sa")) return "SA";
+    if (link.includes("amazon.in")) return "IN";
+    if (link.includes("amazon.ca")) return "CA";
+    if (link.includes("amazon.com")) return "US";
+    return "EG";
+  },
+
+  _getDomainForCountry(country) {
+    const c = (country || "EG").toUpperCase();
+    const map = {
+      EG: "eg",
+      US: "com",
+      GB: "co.uk",
+      DE: "de",
+      FR: "fr",
+      IT: "it",
+      ES: "es",
+      AE: "ae",
+      SA: "sa",
+      IN: "in",
+      CA: "ca",
+      MX: "com.mx"
+    };
+    return map[c] || "eg";
+  },
+
+  _parseMetadataFromHtml(html) {
+    if (!html || typeof html !== "string") return null;
+
+    const cleanText = (raw) => {
+      if (!raw) return "";
+      return raw
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    let title = "";
+    const titleMatch = html.match(/<span\s+id="productTitle"[^>]*>([\s\S]*?)<\/span>/i) ||
+                       html.match(/<h1\s+id="title"[^>]*>([\s\S]*?)<\/h1>/i);
+    if (titleMatch) {
+      title = cleanText(titleMatch[1]);
+    }
+
+    let brand = "";
+    const brandMatch = html.match(/<a\s+id="bylineInfo"[^>]*>([\s\S]*?)<\/a>/i) ||
+                       html.match(/<a\s+id="brand"[^>]*>([\s\S]*?)<\/a>/i);
+    if (brandMatch) {
+      brand = cleanText(brandMatch[1])
+        .replace(/^(Visit the|Brand:|Marke:|العلامة التجارية:?)\s*/i, "")
+        .replace(/\s+(Store|متجر)$/i, "")
+        .trim();
+    }
+
+    const categories = [];
+    const breadcrumbBlockMatch = html.match(/<div\s+id="wayfinding-breadcrumbs_feature_div"[^>]*>([\s\S]*?)<\/div>/i);
+    if (breadcrumbBlockMatch) {
+      const linkRegex = /<a[^>]*class="[^"]*a-link-normal[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+      let m;
+      while ((m = linkRegex.exec(breadcrumbBlockMatch[1])) !== null) {
+        const cat = cleanText(m[1]);
+        if (cat) categories.push(cat);
+      }
+    }
+
+    const bullets = [];
+    const bulletBlockMatch = html.match(/<div\s+id="feature-bullets"[^>]*>([\s\S]*?)<\/div>/i);
+    if (bulletBlockMatch) {
+      const liRegex = /<span\s+class="a-list-item"[^>]*>([\s\S]*?)<\/span>/gi;
+      let m;
+      while ((m = liRegex.exec(bulletBlockMatch[1])) !== null) {
+        const text = cleanText(m[1]);
+        if (text && !text.toLowerCase().includes("make sure this fits") && !text.toLowerCase().includes("تأكد من أن هذا مناسب")) {
+          bullets.push(text);
+        }
+      }
+    }
+
+    let description = "";
+    const descMatch = html.match(/<div\s+id="productDescription"[^>]*>([\s\S]*?)<\/div>/i) ||
+                      html.match(/<div\s+id="bookDescription_feature_div"[^>]*>([\s\S]*?)<\/div>/i);
+    if (descMatch) {
+      description = cleanText(descMatch[1]);
+    }
+
+    let dimensions = null;
+    const dimMatch = html.match(/(?:Product Dimensions|Package Dimensions|Item Dimensions|أبعاد المنتج|أبعاد الشحنة)\s*[:：]\s*([^\n<]+)/i);
+    if (dimMatch) {
+      dimensions = cleanText(dimMatch[1]);
+    }
+
+    return {
+      title: title || null,
+      brand: brand || null,
+      categories: categories.length > 0 ? categories : null,
+      bullets: bullets.length > 0 ? bullets : null,
+      description: description || null,
+      dimensions: dimensions || null
+    };
+  },
+
+  async refreshStaleMetadata(maxBatch = 2) {
+    const products = await this.getProducts();
+    const staleList = [];
+    const now = Date.now();
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+    for (const [asin, p] of Object.entries(products)) {
+      const lastRefresh = p.last_metadata_refresh ? new Date(p.last_metadata_refresh).getTime() : 0;
+      if (now - lastRefresh > THREE_DAYS_MS) {
+        staleList.push(p);
+      }
+    }
+
+    if (!staleList.length) return [];
+
+    const toProcess = staleList.slice(0, maxBatch);
+    const updatedAsins = [];
+
+    for (const p of toProcess) {
+      try {
+        const country = this._detectProductCountry(p);
+        const tld = this._getDomainForCountry(country);
+        const url = p.link || `https://www.amazon.${tld}/dp/${p.asin}`;
+
+        const res = await fetch(url, {
+          headers: {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          }
+        });
+
+        if (!res.ok) {
+          console.warn(`[Moraqeb Metadata Refresh] Fetch failed for ${p.asin} with HTTP ${res.status}`);
+          continue;
+        }
+
+        const html = await res.text();
+        if (html.includes("api-services-support@amazon.com") || html.includes("To discuss automated access to Amazon data")) {
+          console.warn(`[Moraqeb Metadata Refresh] Amazon challenge encountered for ${p.asin}, skipping.`);
+          continue;
+        }
+
+        const meta = this._parseMetadataFromHtml(html);
+        if (meta) {
+          const fresh = products[p.asin] || p;
+          if (meta.title) fresh.title = meta.title;
+          if (meta.brand) fresh.brand = meta.brand;
+          if (meta.description) fresh.description = meta.description;
+          if (meta.bullets && meta.bullets.length) fresh.bullets = meta.bullets;
+          if (meta.categories && meta.categories.length) fresh.categories = meta.categories;
+          if (meta.dimensions) fresh.dimensions = meta.dimensions;
+          fresh.last_metadata_refresh = new Date().toISOString();
+          fresh.updated_at = new Date().toISOString();
+          products[p.asin] = fresh;
+          updatedAsins.push(p.asin);
+        }
+      } catch (err) {
+        console.warn(`[Moraqeb Metadata Refresh] Error refreshing ${p.asin}:`, err);
+      }
+    }
+
+    if (updatedAsins.length > 0) {
+      await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
+      console.log(`[Moraqeb Metadata Refresh] Successfully refreshed metadata for: ${updatedAsins.join(", ")}`);
+    }
+    return updatedAsins;
+  },
+
+  async syncTrackedProductsToWorker() {
+    try {
+      const settings = await this.getSettings();
+      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
+      if (!workerUrl) return { success: false, reason: "no_worker_url" };
+
+      const products = await this.getProducts();
+      const list = Object.values(products).map((p) => ({
+        asin: p.asin || p.code,
+        country: this._detectProductCountry(p),
+        title: p.title || null
+      })).filter((item) => Boolean(item.asin));
+
+      const headers = { "Content-Type": "application/json" };
+      if (settings.api_key) {
+        headers["X-Moraqeb-Key"] = settings.api_key;
+      }
+
+      const res = await fetch(`${workerUrl}/api/tracked-products`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(list)
+      });
+      return await res.json();
+    } catch (err) {
+      console.warn("Moraqeb syncTrackedProducts error:", err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  async fetchAndApplyBufferUpdates() {
+    try {
+      const settings = await this.getSettings();
+      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
+      if (!workerUrl) return [];
+
+      const headers = {};
+      if (settings.api_key) {
+        headers["X-Moraqeb-Key"] = settings.api_key;
+      }
+
+      const res = await fetch(`${workerUrl}/api/buffer/consume`, { headers });
+      if (!res.ok) return [];
+
+      const data = await res.json();
+      const items = data.products || [];
+      if (!items.length) return [];
+
+      for (const item of items) {
+        await this.applyPriceBufferUpdate(item);
+      }
+      return items;
+    } catch (err) {
+      console.warn("Moraqeb fetchAndApplyBuffer error:", err);
+      return [];
+    }
+  },
+
+  async applyPriceBufferUpdate(item) {
+    if (!item || !item.asin) return null;
+    const asin = item.asin.toUpperCase().trim();
+    const products = await this.getProducts();
+    const existing = products[asin] || {};
+
+    const price = item.price !== null && item.price !== undefined ? parseFloat(item.price) : (existing.price !== undefined ? existing.price : null);
+
+    // Update ONLY dynamic tracking metrics; strictly preserve user's static metadata
+    const updated = {
+      ...existing,
+      code: asin,
+      asin: asin,
+      price: price,
+      price_formatted: item.price_formatted || (price !== null ? `${price} ${item.currency || existing.currency || "EGP"}` : existing.price_formatted || "—"),
+      currency: item.currency || existing.currency || "EGP",
+      rating: item.rating !== null && item.rating !== undefined ? parseFloat(item.rating) : (existing.rating !== undefined ? existing.rating : null),
+      reviews_count: item.reviews_count !== null && item.reviews_count !== undefined ? parseInt(item.reviews_count, 10) : (existing.reviews_count !== undefined ? existing.reviews_count : null),
+      seller: item.seller_name || existing.seller || "Amazon",
+      seller_name: item.seller_name || existing.seller_name || "Amazon",
+      seller_id: item.seller_id || existing.seller_id || null,
+      seller_link: item.seller_link || existing.seller_link || null,
+      is_fba: item.is_fba !== undefined && item.is_fba !== null ? Boolean(item.is_fba) : (existing.is_fba || false),
+      in_stock: item.in_stock !== undefined && item.in_stock !== null ? Boolean(item.in_stock) : (existing.in_stock !== undefined ? existing.in_stock : true),
+      bsr: item.bsr !== null && item.bsr !== undefined ? parseInt(item.bsr, 10) : (existing.bsr !== undefined ? existing.bsr : null),
+      bsr_category: item.bsr_category || existing.bsr_category || null,
+      is_best_seller: item.is_best_seller !== undefined && item.is_best_seller !== null ? Boolean(item.is_best_seller) : (existing.is_best_seller || false),
+      is_amazon_choice: item.is_amazon_choice !== undefined && item.is_amazon_choice !== null ? Boolean(item.is_amazon_choice) : (existing.is_amazon_choice || false),
+      bought_past_month: item.bought_past_month !== null && item.bought_past_month !== undefined ? parseInt(item.bought_past_month, 10) : (existing.bought_past_month !== undefined ? existing.bought_past_month : null),
+      last_price_check: item.scraped_at || new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // If existing had no image or title yet, populate fallback from item
+    if (!updated.title && item.title) updated.title = item.title;
+    if (!updated.image && item.image) updated.image = item.image;
+    if (!Array.isArray(updated.images) || updated.images.length === 0) {
+      if (item.image) updated.images = [item.image];
+    }
+    // Clean categories in case legacy objects were in storage
+    if (Array.isArray(updated.categories)) {
+      updated.categories = updated.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
+    } else {
+      updated.categories = [];
+    }
+
+    products[asin] = updated;
+    await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
+
+    // Record price history
+    if (price !== null && !isNaN(price)) {
+      await this.addPriceHistoryPoint(asin, {
+        price: price,
+        bsr: updated.bsr || null,
+        reviews_count: updated.reviews_count || null,
+        rating: updated.rating || null,
+        seller_name: updated.seller || null,
+        timestamp: item.scraped_at || new Date().toISOString()
+      });
+    }
+
+    // Save seller profile if present
+    if (item.seller_id || item.seller_name) {
+      await this.saveSeller({
+        seller_id: item.seller_id || `seller_${asin}`,
+        name: item.seller_name || "Amazon",
+        link: item.seller_link || `https://www.amazon.eg/sp?seller=${item.seller_id || ""}`,
+        rating: 0.0
+      }).catch(() => {});
+    }
+
+    return updated;
   },
 
   async getAllPriceHistory() {
@@ -166,18 +520,18 @@ const StorageManager = {
     const cleanAsin = asin.toUpperCase().trim();
     const allHistory = await this.getAllPriceHistory();
     
-    // Avoid duplicate point if added within last 3 minutes with identical price
-    const now = new Date();
-    const lastPoint = allHistory
-      .filter((h) => h.product_code === cleanAsin)
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    const pointTimestamp = pointData.timestamp || pointData.scraped_at || new Date().toISOString();
+    const pointTimeMs = new Date(pointTimestamp).getTime();
 
-    if (
-      lastPoint &&
-      Math.abs(new Date(lastPoint.timestamp) - now) < 3 * 60 * 1000 &&
-      lastPoint.price === pointData.price
-    ) {
-      return lastPoint;
+    // Avoid duplicate point if an identical price point already exists within 15 minutes of this specific timestamp
+    const hasDuplicate = allHistory.some((h) =>
+      h.product_code === cleanAsin &&
+      Math.abs(new Date(h.timestamp).getTime() - pointTimeMs) < 15 * 60 * 1000 &&
+      h.price === pointData.price
+    );
+
+    if (hasDuplicate) {
+      return null;
     }
 
     const newPoint = {
@@ -189,7 +543,7 @@ const StorageManager = {
       rating: pointData.rating || null,
       offer_count: pointData.offer_count || null,
       seller_name: pointData.seller_name || null,
-      timestamp: now.toISOString()
+      timestamp: pointTimestamp
     };
 
     allHistory.push(newPoint);
@@ -226,7 +580,21 @@ const StorageManager = {
   },
 
   async getSettings() {
-    return (await StorageAdapter.get(STORAGE_KEYS.SETTINGS, { lang: "en", theme: "dark", sidebar_collapsed: false })) || { lang: "en", theme: "dark", sidebar_collapsed: false };
+    return (
+      (await StorageAdapter.get(STORAGE_KEYS.SETTINGS, {
+        lang: "en",
+        theme: "dark",
+        sidebar_collapsed: false,
+        worker_url: "",
+        api_key: ""
+      })) || {
+        lang: "en",
+        theme: "dark",
+        sidebar_collapsed: false,
+        worker_url: "",
+        api_key: ""
+      }
+    );
   },
 
   _settingsQueue: Promise.resolve(),

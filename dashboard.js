@@ -30,6 +30,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnImportData = document.getElementById("btn-import-data");
   const fileImportInput = document.getElementById("file-import-input");
   const btnClearAll = document.getElementById("btn-clear-all");
+  const inputWorkerUrl = document.getElementById("input-worker-url");
+  const inputWorkerKey = document.getElementById("input-worker-key");
+  const btnSaveSync = document.getElementById("btn-save-sync");
+  const syncFeedback = document.getElementById("sync-feedback");
 
   // DOM Elements - Views
   const viewEmpty = document.getElementById("view-empty");
@@ -377,24 +381,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     btnAddProduct.textContent = t("scraping_spinner", currentLang);
 
     try {
-      let p = await StorageManager.getProduct(asin);
-      if (!p) {
-        p = {
-          asin: asin,
-          code: asin,
-          title: `Amazon Listing (${asin})`,
-          link: `https://www.amazon.eg/dp/${asin}`,
-          in_stock: true,
-          seller: "Amazon",
-          is_fba: true,
-          price: 150.0,
-          rating: 4.2,
-          reviews_count: 85,
-          bullets: ["High durability material", "1-Year Manufacturer Warranty"],
-          categories: ["Electronics", "Accessories"]
-        };
-        await StorageManager.saveProduct(p);
+      const targetUrl = val.startsWith("http") ? val : `https://www.amazon.eg/dp/${asin}`;
+      let productData = null;
+
+      // 1. Check if user has an open Amazon tab matching this ASIN
+      if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.query) {
+        try {
+          const tabs = await chrome.tabs.query({ url: "*://*.amazon.*/dp/*" });
+          const matchingTab = tabs.find((t) => t.url && t.url.toUpperCase().includes(asin));
+          if (matchingTab && matchingTab.id) {
+            const resp = await new Promise((res) => {
+              chrome.tabs.sendMessage(matchingTab.id, { action: "GET_PRODUCT_DETAILS" }, res);
+            });
+            if (resp && resp.success && resp.data) {
+              productData = resp.data;
+            }
+          }
+        } catch (_) {}
       }
+
+      // 2. If no matching open tab, fetch page HTML directly and parse with content.js extractors
+      if (!productData && typeof MoraqebScraper !== "undefined") {
+        const res = await fetch(targetUrl, {
+          headers: {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+          }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const htmlText = await res.text();
+        const doc = new DOMParser().parseFromString(htmlText, "text/html");
+        productData = MoraqebScraper.getProductSnapshot(doc, targetUrl);
+      }
+
+      if (!productData || !productData.title || productData.title.length < 3) {
+        throw new Error("Could not extract listing details");
+      }
+
+      productData.asin = asin;
+      productData.code = asin;
+
+      await StorageManager.saveProduct(productData);
+      // Sync tracked list to Cloudflare D1 so the 6-hour cron will track this ASIN too
+      StorageManager.syncTrackedProductsToWorker().catch(() => {});
 
       inputAddProduct.value = "";
       products = await StorageManager.getProducts();
@@ -403,7 +431,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       showAddFeedback(`${t("scrape_success", currentLang)}: ${asin}`);
       setMode("single");
     } catch (err) {
-      console.error(err);
+      console.error("Dashboard Add Product error:", err);
       showAddFeedback(t("scrape_error", currentLang), "error");
     } finally {
       btnAddProduct.disabled = false;
@@ -438,8 +466,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Categories
     if (p.categories && Array.isArray(p.categories) && p.categories.length > 0) {
-      productCategoryPath.textContent = p.categories.join(" > ");
-      specCategory.textContent = p.categories.join(" > ");
+      const catText = p.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean).join(" > ");
+      productCategoryPath.textContent = catText || "Amazon Listing";
+      specCategory.textContent = catText || "—";
     } else {
       productCategoryPath.textContent = "Amazon Listing";
       specCategory.textContent = "—";
@@ -456,7 +485,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     horizontalGallery.innerHTML = "";
     const images = Array.isArray(p.images) && p.images.length > 0 ? p.images : p.image ? [p.image] : [];
     if (images.length > 0) {
-      images.forEach((imgUrl) => {
+      images.forEach((item) => {
+        const imgUrl = typeof item === "string" ? item : item?.link || item?.url;
         if (imgUrl && typeof imgUrl === "string") {
           const card = document.createElement("div");
           card.className = "gallery-card";
@@ -1340,12 +1370,53 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // ==========================================
+  // Cloudflare Worker Sync Action
+  // ==========================================
+  if (btnSaveSync) {
+    btnSaveSync.addEventListener("click", async () => {
+      const workerUrl = (inputWorkerUrl ? inputWorkerUrl.value : "").trim();
+      const apiKey = (inputWorkerKey ? inputWorkerKey.value : "").trim();
+
+      await StorageManager.saveSettings({ worker_url: workerUrl, api_key: apiKey });
+
+      if (syncFeedback) {
+        syncFeedback.textContent = "Syncing with Cloudflare Worker...";
+        syncFeedback.className = "feedback-msg success";
+        syncFeedback.classList.remove("hidden");
+      }
+
+      const syncRes = await StorageManager.syncTrackedProductsToWorker();
+      const bufferRes = await StorageManager.fetchAndApplyBufferUpdates();
+
+      if (syncFeedback) {
+        if (syncRes && syncRes.error) {
+          syncFeedback.textContent = `Sync failed: ${syncRes.error}`;
+          syncFeedback.className = "feedback-msg error";
+        } else {
+          syncFeedback.textContent = `Saved & synced! Synced tracked ASINs. Fetched ${bufferRes.length || 0} updates.`;
+          syncFeedback.className = "feedback-msg success";
+        }
+        setTimeout(() => {
+          syncFeedback.classList.add("hidden");
+        }, 4000);
+      }
+
+      products = await StorageManager.getProducts();
+      updateProductDropdown();
+      renderCurrentMode();
+    });
+  }
+
+  // ==========================================
   // Initial Boot
   // ==========================================
   async function initDashboard() {
     const settings = await StorageManager.getSettings();
     currentLang = settings.lang || "en";
     currentTheme = settings.theme || "dark";
+
+    if (inputWorkerUrl) inputWorkerUrl.value = settings.worker_url || "";
+    if (inputWorkerKey) inputWorkerKey.value = settings.api_key || "";
 
     applyTheme(currentTheme);
 

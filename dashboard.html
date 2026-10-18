@@ -119,6 +119,17 @@
         </select>
       </div>
 
+      <!-- Cloudflare Worker Sync Settings -->
+      <div class="sidebar-group">
+        <label class="group-label">Cloudflare Worker Sync</label>
+        <div class="add-input-row">
+          <input type="text" id="input-worker-url" placeholder="Worker URL (e.g. https://...workers.dev)">
+          <input type="password" id="input-worker-key" placeholder="API Secret Key (optional)">
+          <button type="button" id="btn-save-sync" class="btn btn-secondary">Save & Sync</button>
+        </div>
+        <div id="sync-feedback" class="feedback-msg hidden"></div>
+      </div>
+
       <!-- Data Management / Footer -->
       <div class="sidebar-footer">
         <button type="button" id="btn-export-data" class="footer-action-btn" title="Export Backup">
@@ -650,6 +661,7 @@
 
   <!-- Load Scripts -->
   <script src="locales.js"></script>
+  <script src="content.js"></script>
   <script src="storage.js"></script>
   <script src="dashboard.js"></script>
 </body>
