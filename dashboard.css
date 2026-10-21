@@ -566,6 +566,29 @@ body {
   background: var(--border-light);
 }
 
+/* Sidebar secondary buttons (Add Product, Save & Sync) in light mode */
+[data-theme="light"] .sidebar .btn-secondary,
+[data-theme="light"] #btn-add-product,
+[data-theme="light"] #btn-save-sync,
+:root:not([data-theme="dark"]) .sidebar .btn-secondary,
+:root:not([data-theme="dark"]) #btn-add-product,
+:root:not([data-theme="dark"]) #btn-save-sync {
+  background: var(--bg-sidebar);
+  border-color: #334155;
+  color: #ffffff;
+}
+
+[data-theme="light"] .sidebar .btn-secondary:hover,
+[data-theme="light"] #btn-add-product:hover,
+[data-theme="light"] #btn-save-sync:hover,
+:root:not([data-theme="dark"]) .sidebar .btn-secondary:hover,
+:root:not([data-theme="dark"]) #btn-add-product:hover,
+:root:not([data-theme="dark"]) #btn-save-sync:hover {
+  background: #1e293b;
+  border-color: #64748b;
+  color: #ffffff;
+}
+
 .btn-outline-danger {
   background: transparent;
   border-color: #fca5a5;
