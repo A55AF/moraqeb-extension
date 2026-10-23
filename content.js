@@ -193,10 +193,19 @@ function extractImages(doc = document) {
     const scripts = doc.querySelectorAll('script');
     for (const s of scripts) {
       const content = s.textContent;
-      if (content && content.includes("'colorImages':") && content.includes("'initial':")) {
-        const match = content.match(/'colorImages':\s*\{\s*'initial':\s*(\[[^\]]+\])/);
-        if (match) {
-          const list = JSON.parse(match[1]);
+      if (content && content.includes('colorImages') && content.includes('initial')) {
+        let list = null;
+        const mParse = content.match(/['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*A\.\$\.parseJSON\(\s*['"](\[\{[\s\S]+?\}\])['"]\s*\)/);
+        if (mParse) {
+          try { list = JSON.parse(mParse[1]); } catch (_) {}
+        }
+        if (!list) {
+          const match = content.match(/['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*(\[\{[\s\S]+?\}\])/);
+          if (match) {
+            try { list = JSON.parse(match[1]); } catch (_) {}
+          }
+        }
+        if (Array.isArray(list)) {
           for (const item of list) {
             const url = item.hiRes || item.large;
             if (url) addCleanImage(url);
@@ -672,10 +681,39 @@ if (typeof window !== 'undefined') {
 // Respond to messages from popup or dashboard
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'GET_PRODUCT_DETAILS') {
+    if (request && request.action === 'GET_PRODUCT_DETAILS') {
       const data = getProductSnapshot();
-      sendResponse({ success: !!data, data: data });
+      sendResponse({ success: Boolean(data), data: data });
     }
-    return true;
+    return false;
   });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    MoraqebScraper: typeof window !== 'undefined' ? window.MoraqebScraper : {
+      getProductSnapshot,
+      extractASIN,
+      extractParentASIN,
+      extractTitle,
+      extractBrand,
+      extractPrice,
+      extractRating,
+      extractReviewCount,
+      extractSellerInfo,
+      extractAvailability,
+      extractImages,
+      extractBullets,
+      extractDescription,
+      extractDimensions,
+      extractBSR,
+      extractCategories,
+      extractBadges,
+      extractBoughtPastMonth,
+      extractVariantsCount,
+      extractReviews,
+      parseSellerProfileDoc,
+      parseSearchResults
+    }
+  };
 }

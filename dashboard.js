@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let products = {};
   let currentPriceHistory = [];
   let compSearchResults = [];
+  let cachedSettings = null;
 
   // DOM Elements - Sidebar & Layout
   const appSidebar = document.getElementById("app-sidebar");
@@ -37,7 +38,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const modalCfSetup = document.getElementById("modal-cf-setup");
   const btnCloseCfModal = document.getElementById("btn-close-cf-modal");
   const inputCfToken = document.getElementById("input-cf-token");
-  const linkCfGuide = document.getElementById("link-cf-guide");
   const btnRunCfSetup = document.getElementById("btn-run-cf-setup");
   const btnDisconnectCf = document.getElementById("btn-disconnect-cf");
   const cfSetupProgress = document.getElementById("cf-setup-progress");
@@ -106,20 +106,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const chipsKeywords = document.getElementById("chips-keywords");
   const keywordsEmptyNote = document.getElementById("keywords-empty-note");
 
-  const sentimentSummaryBox = document.getElementById("sentiment-summary-box");
-  const sentimentSummaryText = document.getElementById(
-    "sentiment-summary-text",
-  );
-  const sentimentAspectsBox = document.getElementById("sentiment-aspects-box");
-  const sentimentAspectsChips = document.getElementById(
-    "sentiment-aspects-chips",
-  );
   const reviewsListContainer = document.getElementById(
     "reviews-list-container",
   );
   const reviewsEmptyNote = document.getElementById("reviews-empty-note");
   const btnFetchReviews = document.getElementById("btn-fetch-reviews");
-  const btnFetchReviewsEmpty = document.getElementById("btn-fetch-reviews-empty");
+  const btnFetchReviewsEmpty = document.getElementById(
+    "btn-fetch-reviews-empty",
+  );
 
   // Competitor Tab
   const inputCompQuery = document.getElementById("input-comp-query");
@@ -238,6 +232,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function sanitizeUrl(url) {
+    if (!url || typeof url !== "string") return "#";
+    const trimmed = url.trim();
+    return /^https?:\/\//i.test(trimmed) ? trimmed : "#";
+  }
+
+  function formatPrice(price, currency = "EGP") {
+    if (price === null || price === undefined || isNaN(price)) return "—";
+    return `${Number(price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  }
+
+  function formatNumber(val, prefix = "") {
+    if (val === null || val === undefined || isNaN(val)) return "—";
+    return `${prefix}${Number(val).toLocaleString()}`;
+  }
+
   function sanitizeHtmlForParsing(html) {
     if (!html || typeof html !== "string") return "";
     return html.replace(
@@ -246,9 +266,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!/on[a-zA-Z]+\s*=|javascript:/i.test(attrs)) return match;
         const cleanAttrs = attrs
           .replace(/\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, " ")
-          .replace(/\s+(href|src)\s*=\s*(?:["']\s*javascript:[^"']*["']|javascript:[^\s>]+)/gi, ' $1="#"');
+          .replace(
+            /\s+(href|src)\s*=\s*(?:["']\s*javascript:[^"']*["']|javascript:[^\s>]+)/gi,
+            ' $1="#"',
+          );
         return `<${tag}${cleanAttrs}>`;
-      }
+      },
     );
   }
 
@@ -359,6 +382,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.title = t("app_title", lang);
     renderCurrentMode();
+    if (cachedSettings) {
+      updateCloudflareUi(cachedSettings);
+    }
   }
 
   btnLangEn.addEventListener("click", async () => {
@@ -426,7 +452,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Product Dropdown & Add Product
   // ==========================================
   function updateProductDropdown() {
-    selectActiveProduct.innerHTML = "";
+    selectActiveProduct.replaceChildren();
     const asins = Object.keys(products);
 
     if (asins.length === 0) {
@@ -612,7 +638,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     badgeFbaStatus.classList.toggle("hidden", !p.is_fba);
 
     // Gallery (Main product photos only, clean deduplicated set)
-    horizontalGallery.innerHTML = "";
+    horizontalGallery.replaceChildren();
     const images =
       Array.isArray(p.images) && p.images.length > 0
         ? p.images
@@ -669,7 +695,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     gaugeRiskVal.textContent = `${scores.risk_score}/100`;
     gaugeRiskBar.style.width = `${scores.risk_score}%`;
-    gaugeRiskReasons.innerHTML = "";
+    gaugeRiskReasons.replaceChildren();
     if (scores.risk_reasons && scores.risk_reasons.length > 0) {
       scores.risk_reasons.forEach((r) => {
         const tag = document.createElement("span");
@@ -715,7 +741,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Tabs Content
     // Tab 1: Features
-    listFeatureBullets.innerHTML = "";
+    listFeatureBullets.replaceChildren();
     if (p.bullets && Array.isArray(p.bullets) && p.bullets.length > 0) {
       featuresEmptyNote.classList.add("hidden");
       p.bullets.forEach((b) => {
@@ -738,7 +764,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Tab 3: Keywords
     const kws = AnalyticsEngine.extractKeywords(p);
-    chipsKeywords.innerHTML = "";
+    chipsKeywords.replaceChildren();
     if (kws.length > 0) {
       keywordsEmptyNote.classList.add("hidden");
       kws.forEach((kw) => {
@@ -770,7 +796,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderReviewsTab(p) {
     const reviewsList = Array.isArray(p.reviews_list) ? p.reviews_list : [];
 
-    reviewsListContainer.innerHTML = "";
+    reviewsListContainer.replaceChildren();
     if (reviewsList.length > 0) {
       reviewsEmptyNote.classList.add("hidden");
       reviewsList.forEach((rev) => {
@@ -786,7 +812,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const ratingBadge = document.createElement("span");
         ratingBadge.className = "badge badge-accent";
-        ratingBadge.textContent = rev.rating ? `★ ${rev.rating} / 5` : "★ 5 / 5";
+        ratingBadge.textContent = rev.rating
+          ? `★ ${rev.rating} / 5`
+          : "★ 5 / 5";
 
         const titleGroup = document.createElement("div");
         titleGroup.style.display = "flex";
@@ -858,7 +886,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       // 1. Try fetching product page directly
       try {
         const doc = await fetchAndParseDoc(targetUrl);
-        if (typeof MoraqebScraper !== "undefined" && MoraqebScraper.extractReviews) {
+        if (
+          typeof MoraqebScraper !== "undefined" &&
+          MoraqebScraper.extractReviews
+        ) {
           extracted = MoraqebScraper.extractReviews(doc);
         }
       } catch (err) {
@@ -869,7 +900,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (extracted.length === 0) {
         try {
           const docReviews = await fetchAndParseDoc(reviewsPageUrl);
-          if (typeof MoraqebScraper !== "undefined" && MoraqebScraper.extractReviews) {
+          if (
+            typeof MoraqebScraper !== "undefined" &&
+            MoraqebScraper.extractReviews
+          ) {
             extracted = MoraqebScraper.extractReviews(docReviews);
           }
         } catch (err) {
@@ -893,8 +927,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  if (btnFetchReviews) btnFetchReviews.addEventListener("click", handleFetchReviews);
-  if (btnFetchReviewsEmpty) btnFetchReviewsEmpty.addEventListener("click", handleFetchReviews);
+  if (btnFetchReviews)
+    btnFetchReviews.addEventListener("click", handleFetchReviews);
+  if (btnFetchReviewsEmpty)
+    btnFetchReviewsEmpty.addEventListener("click", handleFetchReviews);
 
   // Competitor Analysis in Tab 5
   btnRunCompAnalysis.addEventListener("click", async () => {
@@ -982,10 +1018,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       compVerdictText.textContent = t("opportunity_hard", currentLang);
     }
 
-    tbodyCompetitors.innerHTML = "";
+    tbodyCompetitors.replaceChildren();
     if (!comps.length) {
       const emptyTr = document.createElement("tr");
-      emptyTr.innerHTML = `<td colspan="8" style="text-align:center; padding: 20px; color: var(--text-muted);">${t("no_competitors_found", currentLang)}</td>`;
+      const emptyTd = document.createElement("td");
+      emptyTd.colSpan = 8;
+      emptyTd.style.textAlign = "center";
+      emptyTd.style.padding = "20px";
+      emptyTd.style.color = "var(--text-muted)";
+      emptyTd.textContent = t("no_competitors_found", currentLang);
+      emptyTr.appendChild(emptyTd);
       tbodyCompetitors.appendChild(emptyTr);
       return;
     }
@@ -993,23 +1035,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     comps.forEach((c) => {
       const isTracked = Boolean(products[c.asin]);
       const tr = document.createElement("tr");
+      const safeAsin = escapeHtml(c.asin);
+      const safeTitle = escapeHtml(c.title);
+      const safeBrand = escapeHtml(c.brand || "—");
+      const safePrice = escapeHtml(c.price !== null ? `${c.price} ${c.currency || "EGP"}` : "—");
+      const safeRating = escapeHtml(c.rating !== null ? `${c.rating} / 5` : "—");
+      const safeReviews = escapeHtml(c.reviews !== null ? String(c.reviews) : "—");
+      const safeBadge = c.badge ? `<span class="badge badge-accent">${escapeHtml(c.badge)}</span>` : "—";
+      const safeLink = sanitizeUrl(c.link);
+      const safeImg = c.image ? `<img src="${sanitizeUrl(c.image)}" class="comp-thumb" alt="">` : "";
+      const viewAmazonText = escapeHtml(t("view_on_amazon", currentLang));
+      const trackBtnText = escapeHtml(isTracked ? t("tracked", currentLang) : t("track", currentLang));
+
       tr.innerHTML = `
-        <td><code>${c.asin}</code></td>
+        <td><code>${safeAsin}</code></td>
         <td>
           <div class="comp-title-cell">
-            ${c.image ? `<img src="${c.image}" class="comp-thumb" alt="">` : ""}
-            <span class="comp-title-text" title="${c.title}">${c.title}</span>
+            ${safeImg}
+            <span class="comp-title-text" title="${safeTitle}">${safeTitle}</span>
           </div>
         </td>
-        <td>${c.brand || "—"}</td>
-        <td><strong>${c.price !== null ? `${c.price} ${c.currency || "EGP"}` : "—"}</strong></td>
-        <td>${c.rating !== null ? `${c.rating} / 5` : "—"}</td>
-        <td>${c.reviews !== null ? c.reviews : "—"}</td>
-        <td>${c.badge ? `<span class="badge badge-accent">${c.badge}</span>` : "—"}</td>
+        <td>${safeBrand}</td>
+        <td><strong>${safePrice}</strong></td>
+        <td>${safeRating}</td>
+        <td>${safeReviews}</td>
+        <td>${safeBadge}</td>
         <td>
           <div class="comp-action-btns">
-            <a href="${c.link}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary comp-view-btn" title="${t("view_on_amazon", currentLang)}">
-              <span>${t("view_on_amazon", currentLang)}</span>
+            <a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary comp-view-btn" title="${viewAmazonText}">
+              <span>${viewAmazonText}</span>
               <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 <polyline points="15 3 21 3 21 9"></polyline>
@@ -1017,7 +1071,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               </svg>
             </a>
             <button type="button" class="btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-comp-track" ${isTracked ? "disabled" : ""}>
-              ${isTracked ? t("tracked", currentLang) : t("track", currentLang)}
+              ${trackBtnText}
             </button>
           </div>
         </td>
@@ -1159,7 +1213,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ==========================================
   // Interactive Canvas Charts (Theme-aware & Paged)
   // ==========================================
-  function paginatePoints(allPoints, offset, canvas, navControls, btnPrev, btnNext, indicator) {
+  function paginatePoints(
+    allPoints,
+    offset,
+    canvas,
+    navControls,
+    btnPrev,
+    btnNext,
+    indicator,
+  ) {
     if (!allPoints || allPoints.length === 0) {
       if (navControls) navControls.classList.add("hidden");
       return { visiblePoints: [], newOffset: 0 };
@@ -1396,7 +1458,12 @@ document.addEventListener("DOMContentLoaded", async () => {
           hour: "2-digit",
           minute: "2-digit",
         });
-        tooltipEl.innerHTML = `<strong>${options.unit === "#" ? "#" : ""}${nearest.pt.val.toLocaleString()} ${options.unit !== "#" ? options.unit : ""}</strong><br>${dateStr}`;
+        tooltipEl.replaceChildren();
+        const strong = document.createElement("strong");
+        strong.textContent = `${options.unit === "#" ? "#" : ""}${nearest.pt.val.toLocaleString()} ${options.unit !== "#" ? options.unit : ""}`;
+        tooltipEl.appendChild(strong);
+        tooltipEl.appendChild(document.createElement("br"));
+        tooltipEl.appendChild(document.createTextNode(dateStr));
         tooltipEl.style.left = `${nearest.x - 40}px`;
         tooltipEl.style.top = `${nearest.y - 45}px`;
       } else {
@@ -1447,7 +1514,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function renderComparisonMatrix() {
     const filter = inputCompareFilter.value.toLowerCase().trim();
     const asins = Object.keys(products);
-    tbodyComparison.innerHTML = "";
+    tbodyComparison.replaceChildren();
 
     const allHistory = await StorageManager.getAllPriceHistory();
 
@@ -1483,22 +1550,36 @@ document.addEventListener("DOMContentLoaded", async () => {
           ? (p.title || asin).substring(0, 45) + "..."
           : p.title || asin;
 
+      const safeAsin = escapeHtml(asin);
+      const safeImg = sanitizeUrl(imgUrl);
+      const safeTitle = escapeHtml(titleShort);
+      const safePrice = escapeHtml(curP ? `${curP.toLocaleString()} EGP` : "—");
+      const safeRating = escapeHtml(p.rating ? `${p.rating} / 5` : "—");
+      const safeReviews = escapeHtml(p.reviews_count ? Number(p.reviews_count).toLocaleString() : "—");
+      const safeBsr = escapeHtml(curBsr ? `#${Number(curBsr).toLocaleString()}` : "—");
+      const safeEstUnits = escapeHtml(scores.est_units ? `≈ ${scores.est_units}` : "—");
+      const safeOppScore = escapeHtml(String(scores.opp_score));
+      const safeStockBadge = p.in_stock
+        ? `<span class="badge badge-success">${escapeHtml(t("in_stock", currentLang))}</span>`
+        : `<span class="badge badge-danger">${escapeHtml(t("out_of_stock", currentLang))}</span>`;
+      const safeSeller = escapeHtml(p.seller || "Amazon");
+
       tr.innerHTML = `
-        <td><code>${asin}</code></td>
+        <td><code>${safeAsin}</code></td>
         <td>
-          <img src="${imgUrl}" class="table-thumb" alt="Product">
-          <strong>${titleShort}</strong>
+          <img src="${safeImg}" class="table-thumb" alt="Product">
+          <strong>${safeTitle}</strong>
         </td>
-        <td><strong>${curP ? `${curP.toLocaleString()} EGP` : "—"}</strong></td>
-        <td>${p.rating ? `${p.rating} / 5` : "—"}</td>
-        <td>${p.reviews_count ? Number(p.reviews_count).toLocaleString() : "—"}</td>
-        <td>${curBsr ? `#${Number(curBsr).toLocaleString()}` : "—"}</td>
-        <td>${scores.est_units ? `≈ ${scores.est_units}` : "—"}</td>
-        <td><span class="badge badge-primary">${scores.opp_score}/100</span></td>
-        <td>${p.in_stock ? `<span class="badge badge-success">${t("in_stock", currentLang)}</span>` : `<span class="badge badge-danger">${t("out_of_stock", currentLang)}</span>`}</td>
-        <td>${p.seller || "Amazon"}</td>
+        <td><strong>${safePrice}</strong></td>
+        <td>${safeRating}</td>
+        <td>${safeReviews}</td>
+        <td>${safeBsr}</td>
+        <td>${safeEstUnits}</td>
+        <td><span class="badge badge-primary">${safeOppScore}/100</span></td>
+        <td>${safeStockBadge}</td>
+        <td>${safeSeller}</td>
         <td>
-          <button type="button" class="btn btn-sm btn-secondary btn-table-view" data-asin="${asin}">View</button>
+          <button type="button" class="btn btn-sm btn-secondary btn-table-view" data-asin="${safeAsin}">View</button>
         </td>
       `;
 
@@ -1561,7 +1642,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   function renderHunterCards(scored) {
-    hunterCardsList.innerHTML = "";
+    hunterCardsList.replaceChildren();
     if (scored.length > 0) {
       hunterEmptyNote.classList.add("hidden");
       hunterCountLabel.classList.remove("hidden");
@@ -1575,22 +1656,36 @@ document.addEventListener("DOMContentLoaded", async () => {
         const card = document.createElement("div");
         card.className = "hunter-candidate-card";
 
-        const ratingDisplay = typeof cand.rating === "number" ? `${cand.rating} / 5` : (cand.rating?.average ? `${cand.rating.average} / 5` : "—");
+        const ratingDisplay =
+          typeof cand.rating === "number"
+            ? `${cand.rating} / 5`
+            : cand.rating?.average
+              ? `${cand.rating.average} / 5`
+              : "—";
+
+        const safeTitle = escapeHtml(cand.title);
+        const safeAsin = escapeHtml(cand.asin);
+        const safeBrand = escapeHtml(cand.brand || "—");
+        const safeRating = escapeHtml(ratingDisplay);
+        const safeReviews = escapeHtml(String(cand.reviews_count || cand.reviews || 0));
+        const safePrice = escapeHtml(cand.price ? `${cand.price} ${cand.currency || "EGP"}` : "—");
+        const safeScore = escapeHtml(String(cand.hunter_score));
+        const trackText = escapeHtml(isTracked ? t("product_tracked", currentLang) : t("track_product_btn", currentLang));
 
         card.innerHTML = `
           <div class="hunter-info-col">
-            <h4>#${idx + 1} · ${cand.title}</h4>
-            <p class="view-subtitle">ASIN: <code>${cand.asin}</code> · Brand: ${cand.brand || "—"} · ${ratingDisplay} (${cand.reviews_count || cand.reviews || 0} reviews)</p>
+            <h4>#${idx + 1} · ${safeTitle}</h4>
+            <p class="view-subtitle">ASIN: <code>${safeAsin}</code> · Brand: ${safeBrand} · ${safeRating} (${safeReviews} reviews)</p>
           </div>
           <div class="hunter-price-col">
-            <strong>${cand.price ? `${cand.price} ${cand.currency || "EGP"}` : "—"}</strong>
+            <strong>${safePrice}</strong>
           </div>
           <div class="hunter-score-col">
-            <span class="hunter-score-badge">${cand.hunter_score}/100</span>
+            <span class="hunter-score-badge">${safeScore}/100</span>
           </div>
           <div class="hunter-action-col">
             <button type="button" class="btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-hunter-track" ${isTracked ? "disabled" : ""}>
-              ${isTracked ? t("product_tracked", currentLang) : t("track_product_btn", currentLang)}
+              ${trackText}
             </button>
           </div>
         `;
@@ -1605,14 +1700,22 @@ document.addEventListener("DOMContentLoaded", async () => {
               if (typeof MoraqebScraper !== "undefined" && cand.link) {
                 try {
                   const doc = await fetchAndParseDoc(cand.link);
-                  productData = MoraqebScraper.getProductSnapshot(doc, cand.link);
+                  productData = MoraqebScraper.getProductSnapshot(
+                    doc,
+                    cand.link,
+                  );
                 } catch (fetchErr) {
-                  console.warn("Could not fetch full page, falling back to search data.", fetchErr);
+                  console.warn(
+                    "Could not fetch full page, falling back to search data.",
+                    fetchErr,
+                  );
                 }
               }
 
               const p = activeAsin ? products[activeAsin] : null;
-              const country = p ? StorageManager._detectProductCountry(p) : "EG";
+              const country = p
+                ? StorageManager._detectProductCountry(p)
+                : "EG";
               const tld = StorageManager._getDomainForCountry(country);
 
               const finalData = {
@@ -1621,7 +1724,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 title: cand.title,
                 brand: cand.brand,
                 price: cand.price,
-                price_formatted: cand.price !== null && cand.price !== undefined ? `${cand.price} ${cand.currency || "EGP"}` : "—",
+                price_formatted:
+                  cand.price !== null && cand.price !== undefined
+                    ? `${cand.price} ${cand.currency || "EGP"}`
+                    : "—",
                 currency: cand.currency || "EGP",
                 rating: cand.rating,
                 reviews_count: cand.reviews_count || cand.reviews,
@@ -1663,7 +1769,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function renderHunterView() {
     hunterQueryInput.value = "";
-    hunterCardsList.innerHTML = "";
+    hunterCardsList.replaceChildren();
     hunterCountLabel.classList.add("hidden");
     hunterEmptyNote.classList.add("hidden");
   }
@@ -1679,7 +1785,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const country = StorageManager._detectProductCountry(p);
     const tld = StorageManager._getDomainForCountry(country);
-    const sellerUrl = p.seller_link || (p.seller_id ? `https://www.amazon.${tld}/sp?seller=${p.seller_id}` : null);
+    const sellerUrl =
+      p.seller_link ||
+      (p.seller_id
+        ? `https://www.amazon.${tld}/sp?seller=${p.seller_id}`
+        : null);
 
     // If we have a seller URL and no detailed ratings cached, fetch on demand!
     if ((!sellerInfo || !sellerInfo.rating) && sellerUrl && p.seller_id) {
@@ -1687,7 +1797,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       btnViewSellerDialog.textContent = "...";
       try {
         const doc = await fetchAndParseDoc(sellerUrl);
-        if (typeof MoraqebScraper !== "undefined" && MoraqebScraper.parseSellerProfileDoc) {
+        if (
+          typeof MoraqebScraper !== "undefined" &&
+          MoraqebScraper.parseSellerProfileDoc
+        ) {
           const liveData = MoraqebScraper.parseSellerProfileDoc(doc);
           if (liveData) {
             sellerInfo = {
@@ -1716,7 +1829,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     modalSellerBusiness.textContent =
       sellerInfo && sellerInfo.business_name
         ? `Business: ${sellerInfo.business_name}`
-        : (sellerName.toLowerCase().includes("amazon") ? "Official Amazon Merchant" : "Third-Party Merchant");
+        : sellerName.toLowerCase().includes("amazon")
+          ? "Official Amazon Merchant"
+          : "Third-Party Merchant";
     modalSellerRating.textContent =
       sellerInfo && sellerInfo.rating ? `${sellerInfo.rating} / 5` : "—";
     modalSellerRatingsCount.textContent =
@@ -1730,7 +1845,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (sellerInfo && (sellerInfo.about || sellerInfo.business_address)) {
       modalSellerAboutSection.classList.remove("hidden");
-      modalSellerAboutText.textContent = sellerInfo.about || sellerInfo.business_address;
+      modalSellerAboutText.textContent =
+        sellerInfo.about || sellerInfo.business_address;
     } else {
       modalSellerAboutSection.classList.add("hidden");
     }
@@ -1765,6 +1881,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   fileImportInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
+    fileImportInput.value = "";
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -1927,13 +2044,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Cloudflare Automated Setup & Modal Logic
   // ==========================================
   function updateCloudflareUi(settings) {
+    if (settings) {
+      cachedSettings = settings;
+    }
+    const currentSettings = cachedSettings || {};
     const isConfigured = Boolean(
-      settings.worker_url && settings.worker_url.trim(),
+      currentSettings.worker_url && currentSettings.worker_url.trim(),
     );
+    const i18nKey = isConfigured ? "cf_manage_btn" : "cf_setup_btn";
     if (btnCfLabel) {
-      btnCfLabel.textContent = isConfigured
-        ? t("cf_manage_btn", currentLang)
-        : t("cf_setup_btn", currentLang);
+      btnCfLabel.setAttribute("data-i18n", i18nKey);
+      btnCfLabel.textContent = t(i18nKey, currentLang);
     }
     if (btnDisconnectCf) {
       if (isConfigured) {
@@ -1945,14 +2066,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (cfConnectedInfo) {
       if (isConfigured) {
         cfConnectedInfo.classList.remove("hidden");
-        if (cfConnectedUrl) cfConnectedUrl.value = settings.worker_url || "";
-        if (cfConnectedKey) cfConnectedKey.value = settings.api_key || "";
+        if (cfConnectedUrl) cfConnectedUrl.value = currentSettings.worker_url || "";
+        if (cfConnectedKey) cfConnectedKey.value = currentSettings.api_key || "";
       } else {
         cfConnectedInfo.classList.add("hidden");
       }
     }
     if (inputCfToken) {
-      inputCfToken.value = settings.cf_api_token || "";
+      inputCfToken.value = currentSettings.cf_api_token || "";
     }
   }
 
@@ -1979,16 +2100,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (cfSetupFeedback) cfSetupFeedback.classList.add("hidden");
       if (cfSetupProgress) cfSetupProgress.classList.add("hidden");
       modalCfSetup.showModal();
-    });
-  }
-
-  if (linkCfGuide) {
-    linkCfGuide.addEventListener("click", (e) => {
-      e.preventDefault();
-      try {
-        const guideUrl = chrome.runtime.getURL("CLOUDFLARE_SETUP.md");
-        window.open(guideUrl, "_blank");
-      } catch (_) {}
     });
   }
 
@@ -2068,10 +2179,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ==========================================
   async function initDashboard() {
     const settings = await StorageManager.getSettings();
+    cachedSettings = settings;
     currentLang = settings.lang || "en";
     currentTheme = settings.theme || "dark";
 
-    updateCloudflareUi(settings);
     applyTheme(currentTheme);
 
     // Silent worker update check in background (no UI clutter)
@@ -2097,6 +2208,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     updateProductDropdown();
     applyTranslations(currentLang);
+    updateCloudflareUi(settings);
   }
 
   // Live Sync with Extension Storage (e.g. settings or products changed from popup)
@@ -2109,6 +2221,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (areaName === "local" && changes[STORAGE_KEYS.SETTINGS]) {
         const newSettings = changes[STORAGE_KEYS.SETTINGS].newValue;
         if (newSettings) {
+          cachedSettings = newSettings;
+          updateCloudflareUi(newSettings);
           if (newSettings.theme && newSettings.theme !== currentTheme) {
             applyTheme(newSettings.theme);
           }

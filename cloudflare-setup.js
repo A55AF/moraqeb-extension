@@ -8,12 +8,22 @@ const GITHUB_WORKER_SCRIPT_URL = `${GITHUB_RAW_BASE}/out/index.js`;
 const DEFAULT_WORKER_NAME = "moraqeb-scraper";
 
 function generateMoraqebKey() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let rand = "";
-  for (let i = 0; i < 8; i++) {
-    rand += chars.charAt(Math.floor(Math.random() * chars.length));
+  const cryptoObj =
+    typeof crypto !== "undefined" && crypto.getRandomValues
+      ? crypto
+      : typeof require !== "undefined"
+        ? require("crypto").webcrypto
+        : null;
+
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const bytes = new Uint8Array(8);
+    cryptoObj.getRandomValues(bytes);
+    return (
+      "moraqeb-" +
+      Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+    );
   }
-  return `moraqeb-${rand}`;
+  throw new Error("Cryptographic random generator unavailable.");
 }
 
 const CloudflareSetup = {

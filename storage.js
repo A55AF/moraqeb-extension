@@ -33,6 +33,25 @@ function normalizeImages(images, fallbackImage = null) {
   return fallbackImage && typeof fallbackImage === "string" ? [fallbackImage] : [];
 }
 
+function generateSecureToken(prefix = "moraqeb-", byteLength = 16) {
+  const cryptoObj =
+    typeof crypto !== "undefined" && crypto.getRandomValues
+      ? crypto
+      : typeof require !== "undefined"
+        ? require("crypto").webcrypto
+        : null;
+
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const bytes = new Uint8Array(byteLength);
+    cryptoObj.getRandomValues(bytes);
+    return (
+      prefix +
+      Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+    );
+  }
+  throw new Error("Cryptographic random generator unavailable.");
+}
+
 const StorageAdapter = {
   async get(key, defaultValue = null) {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -117,11 +136,13 @@ const StorageManager = {
     const products = await this.getProducts();
     const existing = products[asin] || {};
 
-    const cleanImages = normalizeImages(existing.images, existing.image).length > 0
-      ? normalizeImages(existing.images, existing.image)
-      : normalizeImages(data.images, data.image);
+    const cleanImages = normalizeImages(data.images, data.image).length > 0
+      ? normalizeImages(data.images, data.image)
+      : normalizeImages(existing.images, existing.image);
 
-    const mainImage = existing.image || cleanImages[0] || (typeof data.image === "string" ? data.image : null);
+    const mainImage = (typeof data.image === "string" && data.image)
+      ? data.image
+      : (cleanImages[0] || existing.image || null);
     const cleanCategories = normalizeCategories(data.categories).length > 0
       ? normalizeCategories(data.categories)
       : normalizeCategories(existing.categories);
@@ -309,15 +330,108 @@ const StorageManager = {
       this.getSellers(),
       this.getSettings()
     ]);
-    return JSON.stringify({ products, history, sellers, settings, exported_at: new Date().toISOString() }, null, 2);
+    const safeSettings = {
+      lang: settings.lang || "en",
+      theme: settings.theme || "dark",
+      sidebar_collapsed: Boolean(settings.sidebar_collapsed)
+    };
+    return JSON.stringify(
+      {
+        products,
+        history,
+        sellers,
+        settings: safeSettings,
+        exported_at: new Date().toISOString()
+      },
+      null,
+      2
+    );
   },
 
   async importData(jsonString) {
-    const data = JSON.parse(jsonString);
-    if (data.products) await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, data.products);
-    if (data.history) await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, data.history);
-    if (data.sellers) await StorageAdapter.set(STORAGE_KEYS.SELLERS, data.sellers);
-    if (data.settings) await StorageAdapter.set(STORAGE_KEYS.SETTINGS, data.settings);
+    if (!jsonString || typeof jsonString !== "string") {
+      throw new Error("Invalid backup data: empty or not a string");
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonString);
+    } catch (e) {
+      throw new Error("Invalid JSON format in backup file");
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Invalid backup structure: root must be an object");
+    }
+
+    // 1. Validate & sanitize products
+    if (parsed.products) {
+      if (typeof parsed.products !== "object" || Array.isArray(parsed.products)) {
+        throw new Error("Invalid products format in backup");
+      }
+      const safeProducts = {};
+      for (const [asin, p] of Object.entries(parsed.products)) {
+        if (!/^[A-Z0-9]{10}$/i.test(asin)) continue;
+        if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+        const cleanProduct = { ...p };
+        delete cleanProduct.__proto__;
+        delete cleanProduct.constructor;
+        delete cleanProduct.prototype;
+        cleanProduct.asin = asin.toUpperCase();
+        cleanProduct.code = asin.toUpperCase();
+        safeProducts[asin.toUpperCase()] = cleanProduct;
+      }
+      await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, safeProducts);
+    }
+
+    // 2. Validate & sanitize history
+    if (parsed.history) {
+      if (!Array.isArray(parsed.history)) {
+        throw new Error("Invalid price history format in backup");
+      }
+      const safeHistory = parsed.history
+        .filter((h) => h && typeof h === "object" && !Array.isArray(h) && h.product_code && h.price !== undefined)
+        .map((h) => {
+          const clean = { ...h };
+          delete clean.__proto__;
+          delete clean.constructor;
+          delete clean.prototype;
+          return clean;
+        });
+      await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, safeHistory);
+    }
+
+    // 3. Validate & sanitize sellers
+    if (parsed.sellers) {
+      if (typeof parsed.sellers !== "object" || Array.isArray(parsed.sellers)) {
+        throw new Error("Invalid sellers format in backup");
+      }
+      const safeSellers = {};
+      for (const [id, s] of Object.entries(parsed.sellers)) {
+        if (id === "__proto__" || id === "constructor" || id === "prototype") continue;
+        if (!s || typeof s !== "object" || Array.isArray(s)) continue;
+        const cleanSeller = { ...s };
+        delete cleanSeller.__proto__;
+        delete cleanSeller.constructor;
+        delete cleanSeller.prototype;
+        safeSellers[id] = cleanSeller;
+      }
+      await StorageAdapter.set(STORAGE_KEYS.SELLERS, safeSellers);
+    }
+
+    // 4. Validate & sanitize settings:
+    // Only import portable UI preferences; NEVER import or overwrite Cloudflare worker credentials!
+    if (parsed.settings && typeof parsed.settings === "object" && !Array.isArray(parsed.settings)) {
+      const currentSettings = await this.getSettings();
+      const updatedSettings = {
+        ...currentSettings,
+        lang: parsed.settings.lang === "ar" ? "ar" : "en",
+        theme: parsed.settings.theme === "light" ? "light" : "dark",
+        sidebar_collapsed: Boolean(parsed.settings.sidebar_collapsed)
+      };
+      await StorageAdapter.set(STORAGE_KEYS.SETTINGS, updatedSettings);
+    }
+
     return true;
   },
 
@@ -471,13 +585,72 @@ const StorageManager = {
     const dimMatch = html.match(/(?:Product Dimensions|Package Dimensions|Item Dimensions|أبعاد المنتج|أبعاد الشحنة)\s*[:：]\s*([^\n<]+)/i);
     if (dimMatch) dimensions = cleanText(dimMatch[1]);
 
+    // Image Extraction: canonical high-res main image + gallery images
+    const imageMap = new Map();
+    const addImage = (raw) => {
+      if (!raw || typeof raw !== "string") return;
+      if (raw.includes("play-button") || raw.includes("transparent-pixel") || raw.includes("sprite") || raw.includes("icon")) return;
+      const m = raw.match(/\/images\/I\/([A-Za-z0-9%_\-+]+)\./);
+      if (!m) return;
+      const id = m[1];
+      if (imageMap.has(id)) return;
+      const hiRes = raw.replace(/\._[A-Z0-9_,-]+_\./, "._AC_SL1500_.");
+      imageMap.set(id, hiRes);
+    };
+
+    // 1. Landing image element (data-old-hires, data-a-dynamic-image, src)
+    const landingMatch = html.match(/<img[^>]*id="(?:landingImage|imgBlkFront)"[^>]*>/i);
+    if (landingMatch) {
+      const tag = landingMatch[0];
+      const hiresMatch = tag.match(/data-old-hires="([^"]+)"/i);
+      if (hiresMatch) addImage(hiresMatch[1]);
+
+      const dynMatch = tag.match(/data-a-dynamic-image="([^"]+)"/i);
+      if (dynMatch) {
+        try {
+          const clean = dynMatch[1].replace(/&quot;/g, '"');
+          const dyn = JSON.parse(clean);
+          for (const u of Object.keys(dyn)) addImage(u);
+        } catch (_) {}
+      }
+
+      const srcMatch = tag.match(/src="([^"]+)"/i);
+      if (srcMatch) addImage(srcMatch[1]);
+    }
+
+    // 2. colorImages.initial JSON array (full gallery)
+    let colorList = [];
+    const mParse = html.match(/['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*A\.\$\.parseJSON\(\s*['"](\[\{[\s\S]+?\}\])['"]\s*\)/);
+    if (mParse) {
+      try {
+        colorList = JSON.parse(mParse[1]);
+      } catch (_) {}
+    }
+    if (!colorList.length) {
+      const mDirect = html.match(/['"]colorImages['"]\s*:\s*\{\s*['"]initial['"]\s*:\s*(\[\{[\s\S]+?\}\])/);
+      if (mDirect) {
+        try {
+          colorList = JSON.parse(mDirect[1]);
+        } catch (_) {}
+      }
+    }
+    for (const item of colorList) {
+      if (item.hiRes) addImage(item.hiRes);
+      else if (item.large) addImage(item.large);
+    }
+
+    const images = Array.from(imageMap.values()).slice(0, 10);
+    const mainImage = images[0] || null;
+
     return {
       title: title || null,
       brand: brand || null,
       categories: categories.length > 0 ? categories : null,
       bullets: bullets.length > 0 ? bullets : null,
       description: description || null,
-      dimensions: dimensions || null
+      dimensions: dimensions || null,
+      image: mainImage,
+      images: images.length > 0 ? images : null
     };
   },
 
@@ -655,6 +828,14 @@ const StorageManager = {
             if (meta.bullets?.length) fresh.bullets = meta.bullets;
             if (meta.categories?.length) fresh.categories = meta.categories;
             if (meta.dimensions) fresh.dimensions = meta.dimensions;
+            if (meta.image) fresh.image = meta.image;
+            if (meta.images?.length) {
+              fresh.images = meta.images;
+              fresh.image_count = meta.images.length;
+            } else if (meta.image && (!fresh.images || !fresh.images.length)) {
+              fresh.images = [meta.image];
+              fresh.image_count = 1;
+            }
             fresh.last_metadata_refresh = new Date().toISOString();
             fresh.updated_at = new Date().toISOString();
             products[p.asin] = fresh;
@@ -677,8 +858,8 @@ const StorageManager = {
   // ==========================================
   async _getWorkerConfig() {
     const settings = await this.getSettings();
-    const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
-    if (!workerUrl) return null;
+    const workerUrl = (settings.worker_url || "").trim().replace(/\/+$/, "");
+    if (!workerUrl || !/^https:\/\//i.test(workerUrl)) return null;
     const headers = {};
     if (settings.api_key) {
       headers["X-Moraqeb-Key"] = settings.api_key;
