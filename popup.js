@@ -80,34 +80,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateThemeUI(currentTheme);
   updateLangUI(currentLang);
 
-  // Settings click handlers
-  btnThemeDark.addEventListener('click', async () => {
-    if (currentTheme === 'dark') return;
-    currentTheme = 'dark';
+  async function setTheme(theme) {
+    if (currentTheme === theme) return;
+    currentTheme = theme;
     updateThemeUI(currentTheme);
     await StorageManager.saveSettings({ theme: currentTheme });
-  });
+  }
 
-  btnThemeLight.addEventListener('click', async () => {
-    if (currentTheme === 'light') return;
-    currentTheme = 'light';
-    updateThemeUI(currentTheme);
-    await StorageManager.saveSettings({ theme: currentTheme });
-  });
-
-  btnLangEn.addEventListener('click', async () => {
-    if (currentLang === 'en') return;
-    currentLang = 'en';
+  async function setLanguage(lang) {
+    if (currentLang === lang) return;
+    currentLang = lang;
     updateLangUI(currentLang);
     await StorageManager.saveSettings({ lang: currentLang });
-  });
+  }
 
-  btnLangAr.addEventListener('click', async () => {
-    if (currentLang === 'ar') return;
-    currentLang = 'ar';
-    updateLangUI(currentLang);
-    await StorageManager.saveSettings({ lang: currentLang });
-  });
+  btnThemeDark.addEventListener('click', () => setTheme('dark'));
+  btnThemeLight.addEventListener('click', () => setTheme('light'));
+  btnLangEn.addEventListener('click', () => setLanguage('en'));
+  btnLangAr.addEventListener('click', () => setLanguage('ar'));
 
   // Listen for live storage changes (e.g. from dashboard)
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
@@ -182,13 +172,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       prodTitle.textContent = p.title || 'Amazon Product';
       badgeAsin.textContent = `ASIN: ${p.asin}`;
 
-      if (p.image) {
-        prodImg.src = p.image;
-      } else if (p.images && p.images.length > 0) {
-        prodImg.src = p.images[0];
-      } else {
-        prodImg.src = 'icons/icon48.png';
-      }
+      prodImg.src = p.image || p.images?.[0] || 'icons/icon48.png';
 
       badgeStock.textContent = p.in_stock ? t('in_stock', currentLang) : t('out_of_stock', currentLang);
       badgeStock.className = `pill ${p.in_stock ? 'pill-stock' : 'pill-asin'}`;

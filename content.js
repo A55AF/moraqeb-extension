@@ -1,7 +1,22 @@
 // Moraqeb Extension Content Script
-// Extracts comprehensive product intelligence from active Amazon listing pages or parsed DOMs
+// Extracts product intelligence from active Amazon listing pages or parsed DOMs
+
+function parseFirstFloat(text) {
+  if (!text) return null;
+  const m = String(text).replace(/,/g, '').match(/[\d.]+/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+function parseFirstInt(text) {
+  if (!text) return null;
+  const clean = String(text).replace(/[^\d]/g, '');
+  return clean ? parseInt(clean, 10) : null;
+}
 
 function extractASIN(doc = document, url = (typeof window !== 'undefined' ? window.location.href : '')) {
+  if (typeof url === 'string' && /^[A-Z0-9]{10}$/i.test(url.trim())) {
+    return url.trim().toUpperCase();
+  }
   try {
     if (url) {
       const pathname = new URL(url, 'https://www.amazon.eg').pathname;
@@ -63,12 +78,9 @@ function extractPrice(doc = document) {
     const el = doc.querySelector(sel);
     if (el && el.textContent) {
       const raw = el.textContent.trim();
-      const numMatch = raw.replace(/,/g, '').match(/[\d.]+/);
-      if (numMatch) {
-        return {
-          raw: raw,
-          amount: parseFloat(numMatch[0])
-        };
+      const amount = parseFirstFloat(raw);
+      if (amount !== null) {
+        return { raw, amount };
       }
     }
   }
@@ -80,21 +92,13 @@ function extractRating(doc = document) {
   const ratingEl = doc.querySelector('#acrPopover .a-icon-alt') ||
                    doc.querySelector('#averageCustomerReviews .a-icon-alt') ||
                    doc.querySelector('.a-icon-star .a-icon-alt');
-  if (ratingEl && ratingEl.textContent) {
-    const m = ratingEl.textContent.match(/([\d.]+)/);
-    if (m) return parseFloat(m[1]);
-  }
-  return null;
+  return ratingEl ? parseFirstFloat(ratingEl.textContent) : null;
 }
 
 function extractReviewCount(doc = document) {
   if (!doc) return null;
   const countEl = doc.querySelector('#acrCustomerReviewText');
-  if (countEl && countEl.textContent) {
-    const clean = countEl.textContent.replace(/[^\d]/g, '');
-    if (clean) return parseInt(clean, 10);
-  }
-  return null;
+  return countEl ? parseFirstInt(countEl.textContent) : null;
 }
 
 function extractSellerInfo(doc = document) {
@@ -105,29 +109,58 @@ function extractSellerInfo(doc = document) {
 
   if (!doc) return { name: sellerName, is_fba: isFba, link: sellerLink, id: sellerId };
 
-  const sellerLinkEl = doc.querySelector('#sellerProfileTriggerId');
-  if (sellerLinkEl && sellerLinkEl.textContent) {
-    sellerName = sellerLinkEl.textContent.trim();
-    if (sellerLinkEl.href) {
-      sellerLink = sellerLinkEl.href;
-      const m = sellerLink.match(/[?&]seller=([A-Z0-9]+)/i);
+  // 1. Check tabular buybox (modern Amazon layout)
+  const tabularSoldBy = doc.querySelector(
+    '#tabular-buybox .tabular-buybox-text[tabular-attribute-name="Sold by"] a, ' +
+    '#tabular-buybox .tabular-buybox-text[tabular-attribute-name="يُباع من قبل"] a, ' +
+    '#merchantInfoFeature_feature_div a, ' +
+    '#sellerProfileTriggerId'
+  );
+
+  if (tabularSoldBy && tabularSoldBy.textContent.trim()) {
+    sellerName = tabularSoldBy.textContent.trim();
+    const href = tabularSoldBy.getAttribute('href') || tabularSoldBy.href || '';
+    if (href) {
+      sellerLink = href.startsWith('http') ? href : `https://www.amazon.eg${href.startsWith('/') ? '' : '/'}${href}`;
+      const m = href.match(/[?&]seller=([A-Z0-9]+)/i);
       if (m) sellerId = m[1];
     }
   }
 
-  const merchantInfo = doc.querySelector('#merchant-info');
-  if (merchantInfo && merchantInfo.textContent) {
-    const text = merchantInfo.textContent.trim();
-    isFba = text.toLowerCase().includes('amazon') && (text.toLowerCase().includes('fulfilled') || text.toLowerCase().includes('مشحون من قبل أمازون'));
-    if (!sellerLinkEl) {
-      sellerName = text.replace(/\s+/g, ' ').substring(0, 45);
+  // 2. Check tabular ships from (for FBA)
+  const tabularShipsFrom = doc.querySelector(
+    '#tabular-buybox .tabular-buybox-text[tabular-attribute-name="Ships from"], ' +
+    '#tabular-buybox .tabular-buybox-text[tabular-attribute-name="يتم الشحن من"], ' +
+    '#fulfillerInfoFeature_feature_div'
+  );
+  if (tabularShipsFrom && tabularShipsFrom.textContent) {
+    const shipText = tabularShipsFrom.textContent.toLowerCase();
+    if (shipText.includes('amazon') || shipText.includes('أمازون')) {
+      isFba = true;
     }
   }
 
-  // FBA badge check
+  // 3. Fallback to merchant-info text block
+  const merchantInfo = doc.querySelector('#merchant-info');
+  if (merchantInfo && merchantInfo.textContent) {
+    const text = merchantInfo.textContent.trim();
+    if (text.toLowerCase().includes('amazon') && (text.toLowerCase().includes('fulfilled') || text.toLowerCase().includes('مشحون من قبل أمازون'))) {
+      isFba = true;
+    }
+    if (!tabularSoldBy) {
+      const soldMatch = text.match(/(?:Sold by|يُباع من قبل|Verkauf durch|Vendu par)\s+([^.\n,]+?)(?:\s+(?:and|Fulfilled|تشحنه|versandt|et)|$)/i);
+      if (soldMatch && soldMatch[1]) {
+        sellerName = soldMatch[1].trim();
+      } else {
+        sellerName = text.replace(/\s+/g, ' ').substring(0, 45);
+      }
+    }
+  }
+
+  // 4. FBA badge fallback check
   if (!isFba) {
     const fulfillmentBadge = doc.querySelector('#fulfillerInfoFeature_feature_div, #SSOFpopoverLink');
-    if (fulfillmentBadge && fulfillmentBadge.textContent.toLowerCase().includes('amazon')) {
+    if (fulfillmentBadge && (fulfillmentBadge.textContent.toLowerCase().includes('amazon') || fulfillmentBadge.textContent.includes('أمازون'))) {
       isFba = true;
     }
   }
@@ -265,9 +298,8 @@ function extractBSR(doc = document) {
     if (text.includes('Best Sellers Rank') || text.includes('الأكثر مبيعاً')) {
       const m = text.match(/#([0-9,]+)\s*(?:in|في)?\s*([^\n(]+)/i);
       if (m) {
-        const rank = parseInt(m[1].replace(/,/g, ''), 10);
         return {
-          rank: rank,
+          rank: parseFirstInt(m[1]),
           category: m[2] ? m[2].trim() : ''
         };
       }
@@ -289,11 +321,9 @@ function extractCategories(doc = document) {
 
 function extractBadges(doc = document) {
   if (!doc) return { is_best_seller: false, is_amazon_choice: false };
-  const isBestSeller = !!doc.querySelector('#zeitgeistBadge, .badge-rectangle, .best-seller-badge');
-  const isAmazonChoice = !!doc.querySelector('#acBadge_standard, .ac-badge-wrapper, [data-ac-badge]');
   return {
-    is_best_seller: isBestSeller,
-    is_amazon_choice: isAmazonChoice
+    is_best_seller: !!doc.querySelector('#zeitgeistBadge, .badge-rectangle, .best-seller-badge'),
+    is_amazon_choice: !!doc.querySelector('#acBadge_standard, .ac-badge-wrapper, [data-ac-badge]')
   };
 }
 
@@ -303,42 +333,162 @@ function extractBoughtPastMonth(doc = document) {
   if (proofEl && proofEl.textContent) {
     const m = proofEl.textContent.match(/([0-9,]+)\+?\s*bought/i);
     if (m) {
-      return parseInt(m[1].replace(/,/g, ''), 10);
+      return parseFirstInt(m[1]);
     }
   }
   return null;
 }
 
+function extractVariantsCount(doc = document) {
+  if (!doc) return 0;
+
+  // 1. Check embedded script with dimensionValuesDisplayData
+  try {
+    const scripts = doc.querySelectorAll('script');
+    for (const s of scripts) {
+      const content = s.textContent;
+      if (content && content.includes('"dimensionValuesDisplayData"')) {
+        const match = content.match(/"dimensionValuesDisplayData"\s*:\s*(\{[^}]+\})/);
+        if (match) {
+          const parsed = JSON.parse(match[1]);
+          const asins = Object.keys(parsed);
+          if (asins.length > 0) return asins.length;
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 2. DOM swatch elements
+  const swatches = doc.querySelectorAll('#twisterContainer li[data-asin]:not([data-asin=""]), #variation_color_name li, #variation_size_name li');
+  if (swatches && swatches.length > 1) {
+    return swatches.length;
+  }
+
+  // 3. Dropdown select options
+  const selectOpts = doc.querySelectorAll('#native_dropdown_selected_size_name option:not([value="-1"]), select[name="dropdown_selected_size_name"] option:not([value="-1"])');
+  if (selectOpts && selectOpts.length > 1) {
+    return selectOpts.length;
+  }
+
+  return 0;
+}
+
+function parseSellerProfileDoc(doc) {
+  if (!doc) return null;
+
+  const nameEl = doc.querySelector('#seller-name, h1#seller-name, #sellerName, h1');
+  const name = nameEl ? nameEl.textContent.trim() : null;
+
+  const header = doc.querySelector('#page-section-seller-header');
+  const headerText = header ? header.textContent.trim() : '';
+
+  let rating = null;
+  const ratingDesc = doc.querySelector('#effective-timeperiod-rating-lifetime-description, .feedback-detail-description');
+  if (ratingDesc) {
+    rating = parseFirstFloat(ratingDesc.textContent);
+  }
+  if (!rating && headerText) {
+    const starMatch = headerText.match(/([\d.]+)\s*(?:out of 5 stars|من 5 نجوم)/i) || headerText.match(/([\d.]+)\s*\/\s*5/);
+    if (starMatch) rating = parseFloat(starMatch[1]);
+  }
+
+  let ratingCount = null;
+  const countMatch = headerText.match(/\(([\d,.]+)\s*(?:total|تقييم|ratings)/i);
+  if (countMatch) {
+    ratingCount = parseFirstInt(countMatch[1]);
+  } else {
+    const lifetimeCountEl = doc.querySelector('#rating-lifetime-num');
+    if (lifetimeCountEl) ratingCount = parseFirstInt(lifetimeCountEl.textContent);
+  }
+
+  let positivePercent = null;
+  const pctMatch = headerText.match(/(\d+)%\s*(?:positive|إيجابي)/i);
+  if (pctMatch) {
+    positivePercent = parseInt(pctMatch[1], 10);
+  }
+
+  let businessName = null;
+  let businessAddress = null;
+  const rows = doc.querySelectorAll('#page-section-detail-seller-info .a-row, .seller-info-row');
+  rows.forEach((row) => {
+    const text = row.textContent.trim();
+    if (text.toLowerCase().includes('business name') || text.includes('اسم الشركة') || text.includes('اسم العمل التجاري')) {
+      const parts = text.split(/[:：]/);
+      if (parts[1]) businessName = parts.slice(1).join(':').trim();
+    } else if (text.toLowerCase().includes('business address') || text.includes('عنوان العمل التجاري') || text.includes('عنوان الشركة')) {
+      const parts = text.split(/[:：]/);
+      if (parts[1]) businessAddress = parts.slice(1).join(':').trim();
+    }
+  });
+
+  let about = null;
+  const aboutEl = doc.querySelector('#page-section-about-seller, #seller-about');
+  if (aboutEl) {
+    about = aboutEl.textContent.replace(/^About Seller\s*/i, '').replace(/^عن البائع\s*/i, '').trim();
+  }
+
+  return {
+    name,
+    rating,
+    rating_count: ratingCount,
+    positive_percent: positivePercent,
+    business_name: businessName,
+    business_address: businessAddress,
+    about
+  };
+}
+
 function extractReviews(doc = document) {
   const reviews = [];
   if (!doc) return reviews;
-  const reviewNodes = doc.querySelectorAll('#cm-cr-dp-review-list .review, [data-hook="review"]');
+  const reviewNodes = doc.querySelectorAll('#cm-cr-dp-review-list .review, [data-hook="review"], .a-section.review');
   reviewNodes.forEach((node) => {
-    const titleEl = node.querySelector('[data-hook="review-title"] span') || node.querySelector('.review-title');
-    const ratingEl = node.querySelector('[data-hook="review-star-rating"] .a-icon-alt') || node.querySelector('.a-icon-star');
-    const textEl = node.querySelector('[data-hook="review-body"] span') || node.querySelector('.review-text');
-    const authorEl = node.querySelector('.a-profile-name');
-    const dateEl = node.querySelector('[data-hook="review-date"]');
-    const verifiedEl = node.querySelector('[data-hook="avp-badge"]');
-    const helpfulEl = node.querySelector('[data-hook="helpful-vote-statement"]');
+    // Amazon modern layout uses data-hook="reviewTitle", legacy uses data-hook="review-title"
+    const titleEl = node.querySelector('[data-hook="reviewTitle"]') ||
+                    node.querySelector('[data-hook="review-title"] span') ||
+                    node.querySelector('[data-hook="review-title"]') ||
+                    node.querySelector('.review-title') ||
+                    node.querySelector('h5._Y3Itd_single-review-title_2aKRE') ||
+                    node.querySelector('h5');
 
-    let ratingVal = null;
-    if (ratingEl && ratingEl.textContent) {
-      const rm = ratingEl.textContent.match(/([\d.]+)/);
-      if (rm) ratingVal = parseFloat(rm[1]);
-    }
+    const ratingEl = node.querySelector('[data-hook="review-star-rating"] .a-icon-alt') ||
+                     node.querySelector('[data-hook="review-star-rating"]') ||
+                     node.querySelector('.a-icon-star .a-icon-alt') ||
+                     node.querySelector('.a-icon-star');
 
-    let helpfulVotes = 0;
-    if (helpfulEl && helpfulEl.textContent) {
-      const hm = helpfulEl.textContent.match(/(\d+)/);
-      if (hm) helpfulVotes = parseInt(hm[1], 10);
-    }
+    // Amazon modern layout uses data-hook="reviewRichContentContainer" or "reviewText", legacy uses "review-body"
+    const textEl = node.querySelector('[data-hook="reviewRichContentContainer"]') ||
+                   node.querySelector('[data-hook="reviewText"]') ||
+                   node.querySelector('[data-hook="reviewTextContainer"]') ||
+                   node.querySelector('[data-hook="review-body"] span') ||
+                   node.querySelector('[data-hook="review-body"]') ||
+                   node.querySelector('.review-text');
 
-    if (titleEl || textEl) {
+    const authorEl = node.querySelector('.a-profile-name') ||
+                     node.querySelector('[data-hook="genome-widget"] .a-profile-name');
+
+    const dateEl = node.querySelector('[data-hook="review-date"]') ||
+                   node.querySelector('.review-date');
+
+    const verifiedEl = node.querySelector('[data-hook="avp-badge"]') ||
+                       node.querySelector('.review-format-strip');
+
+    const helpfulEl = node.querySelector('[data-hook="helpful-vote-statement"]') ||
+                      node.querySelector('.cr-vote-text');
+
+    const ratingVal = ratingEl ? parseFirstFloat(ratingEl.textContent) : null;
+    const helpfulVotes = helpfulEl ? (parseFirstInt(helpfulEl.textContent) || 0) : 0;
+
+    let cleanTitle = titleEl ? titleEl.textContent.trim() : '';
+    cleanTitle = cleanTitle.replace(/^[\d.,]+\s+(?:out of \d+ stars|من \d+ نجوم|von \d+ Sternen|sur \d+ étoiles)\s*/i, '');
+
+    const reviewText = textEl ? textEl.textContent.trim().replace(/\s+/g, ' ') : '';
+
+    if (cleanTitle || reviewText) {
       reviews.push({
-        title: titleEl ? titleEl.textContent.trim() : '',
-        rating: ratingVal,
-        text: textEl ? textEl.textContent.trim() : '',
+        title: cleanTitle || 'Customer Review',
+        rating: ratingVal !== null ? ratingVal : 5,
+        text: reviewText,
         author: { name: authorEl ? authorEl.textContent.trim() : 'Customer' },
         date: dateEl ? dateEl.textContent.trim() : '',
         is_verified_purchase: !!verifiedEl,
@@ -346,7 +496,7 @@ function extractReviews(doc = document) {
       });
     }
   });
-  return reviews.slice(0, 10);
+  return reviews.slice(0, 15);
 }
 
 function extractSentimentAspects(doc = document) {
@@ -420,6 +570,7 @@ function getProductSnapshot(doc = document, url = (typeof window !== 'undefined'
     is_best_seller: badges.is_best_seller,
     is_amazon_choice: badges.is_amazon_choice,
     bought_past_month: boughtPastMonth,
+    variant_count: extractVariantsCount(doc),
     reviews_list: reviews,
     sentiment_aspects: aspects,
     url: finalUrl,
@@ -427,13 +578,94 @@ function getProductSnapshot(doc = document, url = (typeof window !== 'undefined'
   };
 }
 
+function parseSearchResults(doc = document, siteUrl = 'https://www.amazon.eg') {
+  if (!doc) return [];
+  const cards = doc.querySelectorAll('div[data-component-type="s-search-result"], div[data-asin]:not([data-asin=""])');
+  const results = [];
+  const seenAsins = new Set();
+
+  let domain = 'eg';
+  try {
+    const host = new URL(siteUrl).hostname;
+    const m = host.match(/amazon\.([a-z\.]+)/i);
+    if (m) domain = m[1];
+  } catch (_) {}
+
+  cards.forEach((card) => {
+    const asin = (card.getAttribute('data-asin') || '').trim().toUpperCase();
+    if (!asin || asin.length !== 10 || seenAsins.has(asin)) return;
+    seenAsins.add(asin);
+
+    const titleEl = card.querySelector('[data-cy="title-recipe"] h2, h2 a span, h2 span, h2');
+    const title = titleEl ? titleEl.textContent.trim() : '';
+    if (!title) return;
+
+    const brandEl = card.querySelector('[data-cy="title-recipe"] > .a-row h2, h2.a-size-mini, .a-size-base-plus');
+    const brand = brandEl ? brandEl.textContent.replace(/^(Brand:|Visit the|Store)\s*/i, '').trim() : null;
+
+    let price = null;
+    let priceFormatted = '—';
+    const priceEl = card.querySelector('.a-price .a-offscreen') || card.querySelector('.a-price span[aria-hidden="true"]');
+    if (priceEl && priceEl.textContent) {
+      priceFormatted = priceEl.textContent.trim();
+      price = parseFirstFloat(priceFormatted);
+    }
+
+    const ratingEl = card.querySelector('[data-cy="reviews-block"] .a-icon-alt, i.a-icon-star-small .a-icon-alt, .a-icon-alt');
+    const rating = ratingEl ? parseFirstFloat(ratingEl.textContent) : null;
+
+    const reviewsEl = card.querySelector('[data-cy="reviews-block"] [aria-label*="ratings"], [data-cy="reviews-block"] [aria-label*="تقييم"], span.s-underline-text');
+    const reviewsCount = reviewsEl ? parseFirstInt(reviewsEl.textContent) : null;
+
+    const badgeEl = card.querySelector('.a-badge-text, [data-cy="s-pc-faceout-badge"]');
+    const badge = badgeEl ? badgeEl.textContent.trim() : '';
+
+    const imgEl = card.querySelector('img.s-image');
+    const image = imgEl ? imgEl.getAttribute('src') : null;
+
+    results.push({
+      asin,
+      title,
+      brand,
+      price,
+      price_formatted: priceFormatted,
+      rating,
+      reviews: reviewsCount,
+      reviews_count: reviewsCount,
+      badge,
+      image,
+      link: `https://www.amazon.${domain}/dp/${asin}`
+    });
+  });
+
+  return results;
+}
+
 // Expose on global window object so dashboard and popup can reuse it directly
 if (typeof window !== 'undefined') {
   window.MoraqebScraper = {
     getProductSnapshot,
     extractASIN,
+    extractParentASIN,
     extractTitle,
-    extractPrice
+    extractBrand,
+    extractPrice,
+    extractRating,
+    extractReviewCount,
+    extractSellerInfo,
+    extractAvailability,
+    extractImages,
+    extractBullets,
+    extractDescription,
+    extractDimensions,
+    extractBSR,
+    extractCategories,
+    extractBadges,
+    extractBoughtPastMonth,
+    extractVariantsCount,
+    extractReviews,
+    parseSellerProfileDoc,
+    parseSearchResults
   };
 }
 

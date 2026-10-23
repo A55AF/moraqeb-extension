@@ -5,11 +5,33 @@ const STORAGE_KEYS = {
   PRODUCTS: "moraqeb_products",
   PRICE_HISTORY: "moraqeb_price_history",
   SELLERS: "moraqeb_sellers",
-  SETTINGS: "moraqeb_settings"
+  SETTINGS: "moraqeb_settings",
+  CACHED_WORKER_SCRIPT: "moraqeb_cached_worker_script"
 };
 
-// Safe chrome.storage wrapper with fallback to localStorage
+const DEFAULT_SETTINGS = {
+  lang: "en",
+  theme: "dark",
+  sidebar_collapsed: false,
+  worker_url: "",
+  api_key: ""
+};
+
+// Internal memory store fallback when neither chrome.storage nor localStorage is present
 const _memStore = {};
+
+function normalizeCategories(categories) {
+  if (!Array.isArray(categories)) return [];
+  return categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
+}
+
+function normalizeImages(images, fallbackImage = null) {
+  if (Array.isArray(images) && images.length > 0) {
+    const list = images.map((img) => (typeof img === "string" ? img : img?.link || img?.url)).filter(Boolean);
+    if (list.length > 0) return list;
+  }
+  return fallbackImage && typeof fallbackImage === "string" ? [fallbackImage] : [];
+}
 
 const StorageAdapter = {
   async get(key, defaultValue = null) {
@@ -24,7 +46,8 @@ const StorageAdapter = {
           }
         });
       });
-    } else if (typeof localStorage !== "undefined") {
+    }
+    if (typeof localStorage !== "undefined") {
       try {
         const item = localStorage.getItem(key);
         return item ? JSON.parse(item) : defaultValue;
@@ -32,9 +55,8 @@ const StorageAdapter = {
         console.error("localStorage get error:", e);
         return defaultValue;
       }
-    } else {
-      return _memStore[key] !== undefined ? _memStore[key] : defaultValue;
     }
+    return _memStore[key] !== undefined ? _memStore[key] : defaultValue;
   },
 
   async set(key, value) {
@@ -47,7 +69,8 @@ const StorageAdapter = {
           resolve();
         });
       });
-    } else if (typeof localStorage !== "undefined") {
+    }
+    if (typeof localStorage !== "undefined") {
       try {
         localStorage.setItem(key, JSON.stringify(value));
       } catch (e) {
@@ -61,11 +84,10 @@ const StorageAdapter = {
   async remove(key) {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       return new Promise((resolve) => {
-        chrome.storage.local.remove([key], () => {
-          resolve();
-        });
+        chrome.storage.local.remove([key], () => resolve());
       });
-    } else if (typeof localStorage !== "undefined") {
+    }
+    if (typeof localStorage !== "undefined") {
       localStorage.removeItem(key);
     } else {
       delete _memStore[key];
@@ -74,6 +96,9 @@ const StorageAdapter = {
 };
 
 const StorageManager = {
+  // ==========================================
+  // Product Persistence (CRUD)
+  // ==========================================
   async getProducts() {
     return (await StorageAdapter.get(STORAGE_KEYS.PRODUCTS, {})) || {};
   },
@@ -92,31 +117,20 @@ const StorageManager = {
     const products = await this.getProducts();
     const existing = products[asin] || {};
 
-    // Option A: Preserve existing gallery images and main thumbnail if already present
-    let cleanImages = Array.isArray(existing.images) && existing.images.length > 0 ? existing.images : [];
-    if (cleanImages.length === 0) {
-      if (Array.isArray(data.images) && data.images.length > 0) {
-        cleanImages = data.images.map((img) => (typeof img === "string" ? img : img?.link || img?.url)).filter(Boolean);
-      } else if (data.image && typeof data.image === "string") {
-        cleanImages = [data.image];
-      }
-    }
+    const cleanImages = normalizeImages(existing.images, existing.image).length > 0
+      ? normalizeImages(existing.images, existing.image)
+      : normalizeImages(data.images, data.image);
 
     const mainImage = existing.image || cleanImages[0] || (typeof data.image === "string" ? data.image : null);
-
-    // Sanitize categories to always be string[]
-    let cleanCategories = [];
-    if (Array.isArray(data.categories) && data.categories.length > 0) {
-      cleanCategories = data.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
-    } else if (Array.isArray(existing.categories) && existing.categories.length > 0) {
-      cleanCategories = existing.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
-    }
+    const cleanCategories = normalizeCategories(data.categories).length > 0
+      ? normalizeCategories(data.categories)
+      : normalizeCategories(existing.categories);
 
     const updated = {
       ...existing,
       ...data,
       code: asin,
-      asin: asin,
+      asin,
       images: cleanImages,
       image: mainImage,
       categories: cleanCategories,
@@ -130,7 +144,6 @@ const StorageManager = {
     products[asin] = updated;
     await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
 
-    // Also record a price history entry if price is present (preserving historical timestamp if available)
     if (data.price !== undefined && data.price !== null) {
       await this.addPriceHistoryPoint(asin, {
         price: parseFloat(data.price),
@@ -143,7 +156,6 @@ const StorageManager = {
       });
     }
 
-    // Save seller profile if provided
     if (data.seller_id || data.seller) {
       await this.saveSeller({
         seller_id: data.seller_id || `seller_${asin}`,
@@ -167,26 +179,162 @@ const StorageManager = {
     delete products[cleanAsin];
     await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
 
-    // Delete history for this product
     const allHistory = await this.getAllPriceHistory();
     const filtered = allHistory.filter((h) => h.product_code !== cleanAsin);
     await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, filtered);
 
-    // Sync deletion to worker if configured
     try {
-      const settings = await this.getSettings();
-      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
-      if (workerUrl) {
-        const headers = {};
-        if (settings.api_key) headers["X-Moraqeb-Key"] = settings.api_key;
-        fetch(`${workerUrl}/api/tracked-products?asin=${cleanAsin}`, { method: "DELETE", headers }).catch(() => {});
+      const cfg = await this._getWorkerConfig();
+      if (cfg) {
+        fetch(`${cfg.workerUrl}/api/tracked-products?asin=${cleanAsin}`, {
+          method: "DELETE",
+          headers: cfg.headers
+        }).catch(() => {});
       }
     } catch (_) {}
   },
 
+  // ==========================================
+  // Price & Metrics History
+  // ==========================================
+  async getAllPriceHistory() {
+    return (await StorageAdapter.get(STORAGE_KEYS.PRICE_HISTORY, [])) || [];
+  },
+
+  async getPriceHistory(asin) {
+    if (!asin) return [];
+    const cleanAsin = asin.toUpperCase().trim();
+    const allHistory = await this.getAllPriceHistory();
+    return allHistory
+      .filter((h) => h.product_code === cleanAsin)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  },
+
+  async addPriceHistoryPoint(asin, pointData) {
+    const cleanAsin = asin.toUpperCase().trim();
+    const allHistory = await this.getAllPriceHistory();
+    const pointTimestamp = pointData.timestamp || pointData.scraped_at || new Date().toISOString();
+    const pointTimeMs = new Date(pointTimestamp).getTime();
+
+    // Avoid duplicate entry if an identical price point exists within 15 minutes
+    const hasDuplicate = allHistory.some((h) =>
+      h.product_code === cleanAsin &&
+      Math.abs(new Date(h.timestamp).getTime() - pointTimeMs) < 15 * 60 * 1000 &&
+      h.price === pointData.price
+    );
+
+    if (hasDuplicate) return null;
+
+    const newPoint = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      product_code: cleanAsin,
+      price: pointData.price,
+      bsr: pointData.bsr || null,
+      reviews_count: pointData.reviews_count || null,
+      rating: pointData.rating || null,
+      offer_count: pointData.offer_count || null,
+      seller_name: pointData.seller_name || null,
+      timestamp: pointTimestamp
+    };
+
+    allHistory.push(newPoint);
+    await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, allHistory);
+    return newPoint;
+  },
+
+  // ==========================================
+  // Seller Profiles Directory
+  // ==========================================
+  async getSellers() {
+    return (await StorageAdapter.get(STORAGE_KEYS.SELLERS, {})) || {};
+  },
+
+  async getSeller(nameOrId) {
+    if (!nameOrId) return null;
+    const sellers = await this.getSellers();
+    if (sellers[nameOrId]) return sellers[nameOrId];
+    for (const id in sellers) {
+      if (sellers[id].name && sellers[id].name.toLowerCase() === nameOrId.toLowerCase()) {
+        return sellers[id];
+      }
+    }
+    return null;
+  },
+
+  async saveSeller(sellerData) {
+    if (!sellerData) return;
+    const id = sellerData.seller_id || sellerData.name;
+    if (!id) return;
+    const sellers = await this.getSellers();
+    sellers[id] = { ...sellers[id], ...sellerData };
+    await StorageAdapter.set(STORAGE_KEYS.SELLERS, sellers);
+  },
+
+  // ==========================================
+  // Settings & Backup Operations
+  // ==========================================
+  async getSettings() {
+    const s = await StorageAdapter.get(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+    return { ...DEFAULT_SETTINGS, ...s };
+  },
+
+  _settingsQueue: Promise.resolve(),
+
+  async saveSettings(settings) {
+    this._settingsQueue = this._settingsQueue
+      .then(async () => {
+        const current = await this.getSettings();
+        await StorageAdapter.set(STORAGE_KEYS.SETTINGS, { ...current, ...settings });
+      })
+      .catch((err) => {
+        console.error("Storage saveSettings error:", err);
+      });
+    return this._settingsQueue;
+  },
+
+  async getCachedWorkerScript() {
+    return StorageAdapter.get(STORAGE_KEYS.CACHED_WORKER_SCRIPT, null);
+  },
+
+  async setCachedWorkerScript(code) {
+    if (typeof code === "string" && code.trim().length > 0) {
+      await StorageAdapter.set(STORAGE_KEYS.CACHED_WORKER_SCRIPT, code);
+    }
+  },
+
+  async exportData() {
+    const [products, history, sellers, settings] = await Promise.all([
+      this.getProducts(),
+      this.getAllPriceHistory(),
+      this.getSellers(),
+      this.getSettings()
+    ]);
+    return JSON.stringify({ products, history, sellers, settings, exported_at: new Date().toISOString() }, null, 2);
+  },
+
+  async importData(jsonString) {
+    const data = JSON.parse(jsonString);
+    if (data.products) await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, data.products);
+    if (data.history) await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, data.history);
+    if (data.sellers) await StorageAdapter.set(STORAGE_KEYS.SELLERS, data.sellers);
+    if (data.settings) await StorageAdapter.set(STORAGE_KEYS.SETTINGS, data.settings);
+    return true;
+  },
+
+  async clearAll() {
+    await Promise.all([
+      StorageAdapter.remove(STORAGE_KEYS.PRODUCTS),
+      StorageAdapter.remove(STORAGE_KEYS.PRICE_HISTORY),
+      StorageAdapter.remove(STORAGE_KEYS.SELLERS)
+    ]);
+  },
+
+  // ==========================================
+  // Marketplace & Routing Utilities
+  // ==========================================
   _detectProductCountry(product) {
-    if (product.country) return product.country.toUpperCase();
-    const link = product.link || product.url || "";
+    if (product?.country) return product.country.toUpperCase();
+    const link = product?.link || product?.url || "";
     if (link.includes("amazon.eg")) return "EG";
     if (link.includes("amazon.com.mx")) return "MX";
     if (link.includes("amazon.co.uk")) return "GB";
@@ -203,7 +351,6 @@ const StorageManager = {
   },
 
   _getDomainForCountry(country) {
-    const c = (country || "EG").toUpperCase();
     const map = {
       EG: "eg",
       US: "com",
@@ -218,7 +365,43 @@ const StorageManager = {
       CA: "ca",
       MX: "com.mx"
     };
-    return map[c] || "eg";
+    return map[(country || "EG").toUpperCase()] || "eg";
+  },
+
+  getProductUrl(product) {
+    const asin = product.asin || product.code;
+    const country = this._detectProductCountry(product);
+    const tld = this._getDomainForCountry(country);
+    return product.link || `https://www.amazon.${tld}/dp/${asin}`;
+  },
+
+  // ==========================================
+  // Background Scraping Engine (Worker-safe Regex Parsers)
+  // In Chrome MV3 service workers, DOMParser and window/document are unavailable.
+  // ==========================================
+  async _fetchProductHtml(product) {
+    const asin = product.asin || product.code;
+    const url = this.getProductUrl(product);
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      });
+      if (!res.ok) {
+        console.warn(`[Moraqeb Fetch] HTTP ${res.status} for ${asin}`);
+        return null;
+      }
+      const html = await res.text();
+      if (html.includes("api-services-support@amazon.com") || html.includes("To discuss automated access to Amazon data")) {
+        console.warn(`[Moraqeb Fetch] Amazon challenge encountered for ${asin}, skipping.`);
+        return null;
+      }
+      return html;
+    } catch (err) {
+      console.warn(`[Moraqeb Fetch] Error fetching ${asin}:`, err);
+      return null;
+    }
   },
 
   _parseMetadataFromHtml(html) {
@@ -243,9 +426,7 @@ const StorageManager = {
     let title = "";
     const titleMatch = html.match(/<span\s+id="productTitle"[^>]*>([\s\S]*?)<\/span>/i) ||
                        html.match(/<h1\s+id="title"[^>]*>([\s\S]*?)<\/h1>/i);
-    if (titleMatch) {
-      title = cleanText(titleMatch[1]);
-    }
+    if (titleMatch) title = cleanText(titleMatch[1]);
 
     let brand = "";
     const brandMatch = html.match(/<a\s+id="bylineInfo"[^>]*>([\s\S]*?)<\/a>/i) ||
@@ -284,15 +465,11 @@ const StorageManager = {
     let description = "";
     const descMatch = html.match(/<div\s+id="productDescription"[^>]*>([\s\S]*?)<\/div>/i) ||
                       html.match(/<div\s+id="bookDescription_feature_div"[^>]*>([\s\S]*?)<\/div>/i);
-    if (descMatch) {
-      description = cleanText(descMatch[1]);
-    }
+    if (descMatch) description = cleanText(descMatch[1]);
 
     let dimensions = null;
     const dimMatch = html.match(/(?:Product Dimensions|Package Dimensions|Item Dimensions|أبعاد المنتج|أبعاد الشحنة)\s*[:：]\s*([^\n<]+)/i);
-    if (dimMatch) {
-      dimensions = cleanText(dimMatch[1]);
-    }
+    if (dimMatch) dimensions = cleanText(dimMatch[1]);
 
     return {
       title: title || null,
@@ -302,6 +479,149 @@ const StorageManager = {
       description: description || null,
       dimensions: dimensions || null
     };
+  },
+
+  _parsePriceMetricsFromHtml(html) {
+    if (!html || typeof html !== "string") return null;
+
+    let price = null;
+    let priceFormatted = null;
+    const pricePatterns = [
+      /<div\s+id="corePriceDisplay_desktop_feature_div"[^>]*>[\s\S]*?<span\s+class="a-offscreen"[^>]*>([^<]+)<\/span>/i,
+      /<div\s+id="corePrice_feature_div"[^>]*>[\s\S]*?<span\s+class="a-offscreen"[^>]*>([^<]+)<\/span>/i,
+      /<span\s+class="[^"]*apexPriceToPay[^"]*"[^>]*>[\s\S]*?<span\s+class="a-offscreen"[^>]*>([^<]+)<\/span>/i,
+      /<span\s+id="priceblock_ourprice"[^>]*>([^<]+)<\/span>/i,
+      /<span\s+id="priceblock_dealprice"[^>]*>([^<]+)<\/span>/i,
+      /<span\s+class="a-price[^"]*"[^>]*><span\s+class="a-offscreen">([^<]+)<\/span>/i
+    ];
+
+    for (const pat of pricePatterns) {
+      const match = html.match(pat);
+      if (match && match[1]) {
+        priceFormatted = match[1].trim();
+        const numMatch = priceFormatted.replace(/,/g, "").match(/[\d.]+/);
+        if (numMatch) {
+          price = parseFloat(numMatch[0]);
+          break;
+        }
+      }
+    }
+
+    let rating = null;
+    const ratingMatch = html.match(/id="acrPopover"[^>]*title="([0-9.]+)\s+out of 5/i) ||
+                        html.match(/class="a-icon-alt">([0-9.]+)\s+out of 5/i) ||
+                        html.match(/class="a-icon-alt">([0-9.,]+)\s+من\s+5/i);
+    if (ratingMatch && ratingMatch[1]) {
+      rating = parseFloat(ratingMatch[1].replace(/,/g, "."));
+    }
+
+    let reviewsCount = null;
+    const reviewMatch = html.match(/id="acrCustomerReviewText"[^>]*>([^<]+)<\/span>/i);
+    if (reviewMatch && reviewMatch[1]) {
+      const clean = reviewMatch[1].replace(/[^\d]/g, "");
+      if (clean) reviewsCount = parseInt(clean, 10);
+    }
+
+    let inStock = true;
+    const availMatch = html.match(/id="availability"[^>]*>([\s\S]*?)<\/div>/i);
+    if (availMatch && availMatch[1]) {
+      const text = availMatch[1].toLowerCase();
+      if (text.includes("out of stock") || text.includes("غير متوفر") || text.includes("currently unavailable")) {
+        inStock = false;
+      }
+    }
+
+    let bsr = null;
+    const bsrMatch = html.match(/Best Sellers Rank:[^#]*#([0-9,]+)/i) ||
+                     html.match(/#([0-9,]+)\s+in\s+/i);
+    if (bsrMatch && bsrMatch[1]) {
+      bsr = parseInt(bsrMatch[1].replace(/,/g, ""), 10);
+    }
+
+    let sellerName = null;
+    const sellerMatch = html.match(/id="sellerProfileTriggerId"[^>]*>([^<]+)<\/a>/i);
+    if (sellerMatch && sellerMatch[1]) {
+      sellerName = sellerMatch[1].trim();
+    }
+
+    return {
+      price,
+      price_formatted: priceFormatted,
+      rating,
+      reviews_count: reviewsCount,
+      in_stock: inStock,
+      bsr,
+      seller_name: sellerName
+    };
+  },
+
+  async updateTrackedProductsLocally({ batchSize = 5 } = {}) {
+    const products = await this.getProducts();
+    const allProducts = Object.values(products);
+    if (!allProducts.length) return [];
+
+    // Prioritize products never checked, then oldest last_price_check timestamp
+    allProducts.sort((a, b) => {
+      const timeA = a.last_price_check ? new Date(a.last_price_check).getTime() : 0;
+      const timeB = b.last_price_check ? new Date(b.last_price_check).getTime() : 0;
+      return timeA - timeB;
+    });
+
+    const batch = allProducts.slice(0, batchSize);
+    const updatedAsins = [];
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    for (let i = 0; i < batch.length; i++) {
+      const p = batch[i];
+      const asin = p.asin || p.code;
+      if (!asin) continue;
+
+      // Jitter delay between requests (2.5s - 4.5s) to avoid bot triggers
+      if (i > 0) {
+        await sleep(Math.floor(2500 + Math.random() * 2000));
+      }
+
+      const fresh = products[asin] || p;
+      fresh.last_price_check = new Date().toISOString();
+
+      try {
+        const html = await this._fetchProductHtml(fresh);
+        if (html) {
+          const metrics = this._parsePriceMetricsFromHtml(html);
+          if (metrics && (metrics.price !== null || metrics.rating !== null)) {
+            if (metrics.price !== null) {
+              fresh.price = metrics.price;
+              fresh.price_formatted = metrics.price_formatted || `${metrics.price} ${fresh.currency || "EGP"}`;
+            }
+            if (metrics.rating !== null) fresh.rating = metrics.rating;
+            if (metrics.reviews_count !== null) fresh.reviews_count = metrics.reviews_count;
+            if (metrics.in_stock !== null) fresh.in_stock = metrics.in_stock;
+            if (metrics.bsr !== null) fresh.bsr = metrics.bsr;
+            if (metrics.seller_name) fresh.seller = metrics.seller_name;
+            fresh.updated_at = new Date().toISOString();
+
+            if (metrics.price !== null) {
+              await this.addPriceHistoryPoint(asin, {
+                price: metrics.price,
+                bsr: fresh.bsr || null,
+                reviews_count: fresh.reviews_count || null,
+                rating: fresh.rating || null,
+                seller_name: fresh.seller || null,
+                timestamp: fresh.last_price_check
+              });
+            }
+            updatedAsins.push(asin);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Moraqeb Local Scraper] Error scraping ${asin}:`, err);
+      } finally {
+        products[asin] = fresh;
+      }
+    }
+
+    await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
+    return updatedAsins;
   },
 
   async refreshStaleMetadata(maxBatch = 2) {
@@ -324,40 +644,22 @@ const StorageManager = {
 
     for (const p of toProcess) {
       try {
-        const country = this._detectProductCountry(p);
-        const tld = this._getDomainForCountry(country);
-        const url = p.link || `https://www.amazon.${tld}/dp/${p.asin}`;
-
-        const res = await fetch(url, {
-          headers: {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        const html = await this._fetchProductHtml(p);
+        if (html) {
+          const meta = this._parseMetadataFromHtml(html);
+          if (meta) {
+            const fresh = products[p.asin] || p;
+            if (meta.title) fresh.title = meta.title;
+            if (meta.brand) fresh.brand = meta.brand;
+            if (meta.description) fresh.description = meta.description;
+            if (meta.bullets?.length) fresh.bullets = meta.bullets;
+            if (meta.categories?.length) fresh.categories = meta.categories;
+            if (meta.dimensions) fresh.dimensions = meta.dimensions;
+            fresh.last_metadata_refresh = new Date().toISOString();
+            fresh.updated_at = new Date().toISOString();
+            products[p.asin] = fresh;
+            updatedAsins.push(p.asin);
           }
-        });
-
-        if (!res.ok) {
-          console.warn(`[Moraqeb Metadata Refresh] Fetch failed for ${p.asin} with HTTP ${res.status}`);
-          continue;
-        }
-
-        const html = await res.text();
-        if (html.includes("api-services-support@amazon.com") || html.includes("To discuss automated access to Amazon data")) {
-          console.warn(`[Moraqeb Metadata Refresh] Amazon challenge encountered for ${p.asin}, skipping.`);
-          continue;
-        }
-
-        const meta = this._parseMetadataFromHtml(html);
-        if (meta) {
-          const fresh = products[p.asin] || p;
-          if (meta.title) fresh.title = meta.title;
-          if (meta.brand) fresh.brand = meta.brand;
-          if (meta.description) fresh.description = meta.description;
-          if (meta.bullets && meta.bullets.length) fresh.bullets = meta.bullets;
-          if (meta.categories && meta.categories.length) fresh.categories = meta.categories;
-          if (meta.dimensions) fresh.dimensions = meta.dimensions;
-          fresh.last_metadata_refresh = new Date().toISOString();
-          fresh.updated_at = new Date().toISOString();
-          products[p.asin] = fresh;
-          updatedAsins.push(p.asin);
         }
       } catch (err) {
         console.warn(`[Moraqeb Metadata Refresh] Error refreshing ${p.asin}:`, err);
@@ -366,16 +668,28 @@ const StorageManager = {
 
     if (updatedAsins.length > 0) {
       await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
-      console.log(`[Moraqeb Metadata Refresh] Successfully refreshed metadata for: ${updatedAsins.join(", ")}`);
     }
     return updatedAsins;
   },
 
+  // ==========================================
+  // Cloudflare Synchronization
+  // ==========================================
+  async _getWorkerConfig() {
+    const settings = await this.getSettings();
+    const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
+    if (!workerUrl) return null;
+    const headers = {};
+    if (settings.api_key) {
+      headers["X-Moraqeb-Key"] = settings.api_key;
+    }
+    return { workerUrl, headers, settings };
+  },
+
   async syncTrackedProductsToWorker() {
     try {
-      const settings = await this.getSettings();
-      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
-      if (!workerUrl) return { success: false, reason: "no_worker_url" };
+      const cfg = await this._getWorkerConfig();
+      if (!cfg) return { success: false, reason: "no_worker_url" };
 
       const products = await this.getProducts();
       const list = Object.values(products).map((p) => ({
@@ -384,14 +698,9 @@ const StorageManager = {
         title: p.title || null
       })).filter((item) => Boolean(item.asin));
 
-      const headers = { "Content-Type": "application/json" };
-      if (settings.api_key) {
-        headers["X-Moraqeb-Key"] = settings.api_key;
-      }
-
-      const res = await fetch(`${workerUrl}/api/tracked-products`, {
+      const res = await fetch(`${cfg.workerUrl}/api/tracked-products`, {
         method: "POST",
-        headers,
+        headers: { ...cfg.headers, "Content-Type": "application/json" },
         body: JSON.stringify(list)
       });
       return await res.json();
@@ -403,16 +712,10 @@ const StorageManager = {
 
   async fetchAndApplyBufferUpdates() {
     try {
-      const settings = await this.getSettings();
-      const workerUrl = (settings.worker_url || "").replace(/\/+$/, "");
-      if (!workerUrl) return [];
+      const cfg = await this._getWorkerConfig();
+      if (!cfg) return [];
 
-      const headers = {};
-      if (settings.api_key) {
-        headers["X-Moraqeb-Key"] = settings.api_key;
-      }
-
-      const res = await fetch(`${workerUrl}/api/buffer/consume`, { headers });
+      const res = await fetch(`${cfg.workerUrl}/api/buffer/consume`, { headers: cfg.headers });
       if (!res.ok) return [];
 
       const data = await res.json();
@@ -430,19 +733,18 @@ const StorageManager = {
   },
 
   async applyPriceBufferUpdate(item) {
-    if (!item || !item.asin) return null;
+    if (!item?.asin) return null;
     const asin = item.asin.toUpperCase().trim();
     const products = await this.getProducts();
     const existing = products[asin] || {};
 
     const price = item.price !== null && item.price !== undefined ? parseFloat(item.price) : (existing.price !== undefined ? existing.price : null);
 
-    // Update ONLY dynamic tracking metrics; strictly preserve user's static metadata
     const updated = {
       ...existing,
       code: asin,
-      asin: asin,
-      price: price,
+      asin,
+      price,
       price_formatted: item.price_formatted || (price !== null ? `${price} ${item.currency || existing.currency || "EGP"}` : existing.price_formatted || "—"),
       currency: item.currency || existing.currency || "EGP",
       rating: item.rating !== null && item.rating !== undefined ? parseFloat(item.rating) : (existing.rating !== undefined ? existing.rating : null),
@@ -462,26 +764,19 @@ const StorageManager = {
       updated_at: new Date().toISOString()
     };
 
-    // If existing had no image or title yet, populate fallback from item
     if (!updated.title && item.title) updated.title = item.title;
     if (!updated.image && item.image) updated.image = item.image;
     if (!Array.isArray(updated.images) || updated.images.length === 0) {
       if (item.image) updated.images = [item.image];
     }
-    // Clean categories in case legacy objects were in storage
-    if (Array.isArray(updated.categories)) {
-      updated.categories = updated.categories.map((c) => (typeof c === "string" ? c : c?.name || "")).filter(Boolean);
-    } else {
-      updated.categories = [];
-    }
+    updated.categories = normalizeCategories(updated.categories);
 
     products[asin] = updated;
     await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, products);
 
-    // Record price history
     if (price !== null && !isNaN(price)) {
       await this.addPriceHistoryPoint(asin, {
-        price: price,
+        price,
         bsr: updated.bsr || null,
         reviews_count: updated.reviews_count || null,
         rating: updated.rating || null,
@@ -490,7 +785,6 @@ const StorageManager = {
       });
     }
 
-    // Save seller profile if present
     if (item.seller_id || item.seller_name) {
       await this.saveSeller({
         seller_id: item.seller_id || `seller_${asin}`,
@@ -501,148 +795,12 @@ const StorageManager = {
     }
 
     return updated;
-  },
-
-  async getAllPriceHistory() {
-    return (await StorageAdapter.get(STORAGE_KEYS.PRICE_HISTORY, [])) || [];
-  },
-
-  async getPriceHistory(asin) {
-    if (!asin) return [];
-    const cleanAsin = asin.toUpperCase().trim();
-    const allHistory = await this.getAllPriceHistory();
-    return allHistory
-      .filter((h) => h.product_code === cleanAsin)
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  },
-
-  async addPriceHistoryPoint(asin, pointData) {
-    const cleanAsin = asin.toUpperCase().trim();
-    const allHistory = await this.getAllPriceHistory();
-    
-    const pointTimestamp = pointData.timestamp || pointData.scraped_at || new Date().toISOString();
-    const pointTimeMs = new Date(pointTimestamp).getTime();
-
-    // Avoid duplicate point if an identical price point already exists within 15 minutes of this specific timestamp
-    const hasDuplicate = allHistory.some((h) =>
-      h.product_code === cleanAsin &&
-      Math.abs(new Date(h.timestamp).getTime() - pointTimeMs) < 15 * 60 * 1000 &&
-      h.price === pointData.price
-    );
-
-    if (hasDuplicate) {
-      return null;
-    }
-
-    const newPoint = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      product_code: cleanAsin,
-      price: pointData.price,
-      bsr: pointData.bsr || null,
-      reviews_count: pointData.reviews_count || null,
-      rating: pointData.rating || null,
-      offer_count: pointData.offer_count || null,
-      seller_name: pointData.seller_name || null,
-      timestamp: pointTimestamp
-    };
-
-    allHistory.push(newPoint);
-    await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, allHistory);
-    return newPoint;
-  },
-
-  async getSellers() {
-    return (await StorageAdapter.get(STORAGE_KEYS.SELLERS, {})) || {};
-  },
-
-  async getSeller(nameOrId) {
-    if (!nameOrId) return null;
-    const sellers = await this.getSellers();
-    if (sellers[nameOrId]) return sellers[nameOrId];
-    for (const id in sellers) {
-      if (sellers[id].name && sellers[id].name.toLowerCase() === nameOrId.toLowerCase()) {
-        return sellers[id];
-      }
-    }
-    return null;
-  },
-
-  async saveSeller(sellerData) {
-    if (!sellerData) return;
-    const id = sellerData.seller_id || sellerData.name;
-    if (!id) return;
-    const sellers = await this.getSellers();
-    sellers[id] = {
-      ...sellers[id],
-      ...sellerData
-    };
-    await StorageAdapter.set(STORAGE_KEYS.SELLERS, sellers);
-  },
-
-  async getSettings() {
-    return (
-      (await StorageAdapter.get(STORAGE_KEYS.SETTINGS, {
-        lang: "en",
-        theme: "dark",
-        sidebar_collapsed: false,
-        worker_url: "",
-        api_key: ""
-      })) || {
-        lang: "en",
-        theme: "dark",
-        sidebar_collapsed: false,
-        worker_url: "",
-        api_key: ""
-      }
-    );
-  },
-
-  _settingsQueue: Promise.resolve(),
-
-  async saveSettings(settings) {
-    this._settingsQueue = this._settingsQueue
-      .then(async () => {
-        const current = await this.getSettings();
-        await StorageAdapter.set(STORAGE_KEYS.SETTINGS, { ...current, ...settings });
-      })
-      .catch((err) => {
-        console.error("Storage saveSettings error:", err);
-      });
-    return this._settingsQueue;
-  },
-
-  async setSettings(settings) {
-    return this.saveSettings(settings);
-  },
-
-  async exportData() {
-    const products = await this.getProducts();
-    const history = await this.getAllPriceHistory();
-    const sellers = await this.getSellers();
-    const settings = await this.getSettings();
-    return JSON.stringify({ products, history, sellers, settings, exported_at: new Date().toISOString() }, null, 2);
-  },
-
-  async importData(jsonString) {
-    const data = JSON.parse(jsonString);
-    if (data.products) await StorageAdapter.set(STORAGE_KEYS.PRODUCTS, data.products);
-    if (data.history) await StorageAdapter.set(STORAGE_KEYS.PRICE_HISTORY, data.history);
-    if (data.sellers) await StorageAdapter.set(STORAGE_KEYS.SELLERS, data.sellers);
-    if (data.settings) await StorageAdapter.set(STORAGE_KEYS.SETTINGS, data.settings);
-    return true;
-  },
-
-  async clearAll() {
-    await StorageAdapter.remove(STORAGE_KEYS.PRODUCTS);
-    await StorageAdapter.remove(STORAGE_KEYS.PRICE_HISTORY);
-    await StorageAdapter.remove(STORAGE_KEYS.SELLERS);
   }
 };
 
 // ==========================================
-// Analytics Algorithms ported from app.py
+// Analytics Algorithms
 // ==========================================
-
 const AnalyticsEngine = {
   getReferralPct(categories) {
     const text = (Array.isArray(categories) ? categories.join(" ") : String(categories || "")).toLowerCase();
@@ -733,7 +891,6 @@ const AnalyticsEngine = {
   },
 
   computeScores(p, bsr, price, currentLang = "en") {
-    // Listing Quality (0-100)
     let lq = 0;
     const titleLen = (p.title || "").length;
     lq += titleLen >= 60 && titleLen <= 200 ? 18 : titleLen >= 35 ? 11 : 5;
@@ -753,7 +910,6 @@ const AnalyticsEngine = {
     }
     const listingQuality = Math.min(100, lq);
 
-    // Risk Radar (0-100)
     let risk = 0;
     const riskReasons = [];
 
@@ -780,7 +936,6 @@ const AnalyticsEngine = {
     }
     const riskScore = Math.min(100, risk);
 
-    // Sales Estimation based on BSR
     let estUnits = null;
     if (bsr && !isNaN(bsr)) {
       const bsrNum = parseInt(bsr, 10);
@@ -794,7 +949,6 @@ const AnalyticsEngine = {
       else estUnits = 5;
     }
 
-    // Opportunity Score (0-100)
     const demandComponent = estUnits && estUnits >= 100 ? 85 : estUnits ? 60 : 40;
     const oppScore = Math.round(demandComponent * 0.35 + listingQuality * 0.35 + (100 - riskScore) * 0.3);
 
@@ -814,7 +968,7 @@ const AnalyticsEngine = {
 
     const stopWords = new Set([
       "the", "and", "for", "with", "from", "amazon", "this", "that", "made",
-      "inch", "pack", "set", "black", "white", "color", "size", "with",
+      "inch", "pack", "set", "black", "white", "color", "size",
       "من", "في", "على", "الى", "مع", "هذا", "هذه", "عن", "بين", "أو", "هو", "هي"
     ]);
 
@@ -833,22 +987,64 @@ const AnalyticsEngine = {
   },
 
   calculateHunterScore(card) {
-    const ratingObj = typeof card.rating === "object" ? card.rating : {};
-    const ratingVal = ratingObj.average !== undefined ? ratingObj.average : (parseFloat(card.rating) || 3.8);
-    const reviewsCount = ratingObj.count !== undefined ? ratingObj.count : (parseInt(card.reviews_count, 10) || null);
+    if (!card) return 0;
 
-    const priceObj = typeof card.price === "object" ? card.price : {};
-    const priceVal = priceObj.amount !== undefined ? priceObj.amount : (parseFloat(card.price) || null);
+    // rating can be a number (from parseSearchResults: e.g. 4.2), an object (e.g. { average, count }), string, or null
+    let ratingVal = 3.8;
+    let reviewsCount = null;
+    if (typeof card.rating === "number" && !isNaN(card.rating)) {
+      ratingVal = card.rating;
+    } else if (card.rating && typeof card.rating === "object") {
+      if (typeof card.rating.average === "number" && !isNaN(card.rating.average)) {
+        ratingVal = card.rating.average;
+      } else if (card.rating.average) {
+        ratingVal = parseFloat(card.rating.average) || 3.8;
+      }
+      if (card.rating.count !== undefined) reviewsCount = card.rating.count;
+    } else if (typeof card.rating === "string") {
+      const parsed = parseFloat(card.rating);
+      if (!isNaN(parsed)) ratingVal = parsed;
+    }
 
-    const badges = typeof card.badges === "object" ? card.badges : {};
+    if (reviewsCount === null) {
+      if (typeof card.reviews_count === "number" && !isNaN(card.reviews_count)) {
+        reviewsCount = card.reviews_count;
+      } else if (typeof card.reviews === "number" && !isNaN(card.reviews)) {
+        reviewsCount = card.reviews;
+      } else if (card.reviews_count) {
+        reviewsCount = parseInt(card.reviews_count, 10) || null;
+      } else if (card.reviews) {
+        reviewsCount = parseInt(card.reviews, 10) || null;
+      }
+    }
 
-    // Demand proxy
+    // price can be a number, an object ({ amount }), string, or null
+    let priceVal = null;
+    if (typeof card.price === "number" && !isNaN(card.price)) {
+      priceVal = card.price;
+    } else if (card.price && typeof card.price === "object") {
+      if (typeof card.price.amount === "number" && !isNaN(card.price.amount)) {
+        priceVal = card.price.amount;
+      } else if (card.price.amount) {
+        priceVal = parseFloat(card.price.amount) || null;
+      }
+    } else if (typeof card.price === "string") {
+      const parsed = parseFloat(card.price);
+      if (!isNaN(parsed)) priceVal = parsed;
+    }
+
+    const badges = (card.badges && typeof card.badges === "object") ? card.badges : {};
+    const badgeText = typeof card.badge === "string" ? card.badge.toLowerCase() : "";
+
     let demand = 60;
-    if (badges.is_best_seller || card.is_best_seller) demand = 95;
-    else if (badges.is_amazons_choice || card.is_amazon_choice) demand = 85;
-    else if (card.bought_past_month) demand = 80;
+    if (badges.is_best_seller || card.is_best_seller || badgeText.includes("best seller") || badgeText.includes("الأكثر مبيعاً")) {
+      demand = 95;
+    } else if (badges.is_amazons_choice || card.is_amazon_choice || badgeText.includes("amazon's choice") || badgeText.includes("اختيار أمازون")) {
+      demand = 85;
+    } else if (card.bought_past_month) {
+      demand = 80;
+    }
 
-    // Review moat: fewer reviews = higher opportunity
     let reviewScore = 50;
     if (reviewsCount === null) reviewScore = 50;
     else if (reviewsCount < 100) reviewScore = 92;
@@ -857,10 +1053,8 @@ const AnalyticsEngine = {
     else if (reviewsCount < 2000) reviewScore = 50;
     else reviewScore = 30;
 
-    // Rating score
-    const ratingScore = Math.round(ratingVal * 20);
+    const ratingScore = Math.min(100, Math.max(0, Math.round(ratingVal * 20)));
 
-    // Price sweetspot (150 - 2,500 EGP)
     let priceScore = 50;
     if (priceVal === null) priceScore = 45;
     else if (priceVal >= 150 && priceVal <= 2500) priceScore = 85;

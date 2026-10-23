@@ -20,7 +20,19 @@
     "*://*.amazon.de/*",
     "*://*.amazon.ae/*",
     "*://*.amazon.sa/*",
-    "https://*.workers.dev/*"
+    "https://*.workers.dev/*",
+    "https://api.cloudflare.com/*",
+    "https://api.github.com/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "schema.sql",
+        "CLOUDFLARE_SETUP.md"
+      ],
+      "matches": ["<all_urls>"]
+    }
   ],
   "icons": {
     "16": "icons/icon16.png",

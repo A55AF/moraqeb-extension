@@ -44,7 +44,6 @@ const TRANSLATIONS = {
   in_stock: { en: "In Stock", ar: "متوفر في المخزون" },
   out_of_stock: { en: "Out of Stock", ar: "غير متوفر" },
   fba_fulfilled: { en: "FBA Fulfilled", ar: "مشحون بواسطة أمازون (FBA)" },
-  view_on_amazon: { en: "View on Amazon ↗", ar: "عرض على أمازون ↗" },
 
   // Sections
   images_section: { en: "Images", ar: "صور المنتج" },
@@ -126,8 +125,9 @@ const TRANSLATIONS = {
   ai_customer_sentiment: { en: "AI Customer Sentiment Summary", ar: "ملخص مشاعر العملاء بواسطة الذكاء الاصطناعي" },
   sentiment_aspects: { en: "Key Sentiment Themes & Aspects", ar: "الموضوعات والمشاعر الرئيسية" },
   top_reviews: { en: "Top Customer Reviews", ar: "أبرز مراجعات العملاء" },
-  fetch_reviews_btn: { en: "Analyze Reviews & Sentiment", ar: "تحليل المراجعات والمشاعر" },
-  fetching_reviews: { en: "Fetching and analyzing customer reviews...", ar: "جاري جلب وتحليل مراجعات العملاء..." },
+  fetch_reviews_btn: { en: "Fetch Reviews", ar: "جلب المراجعات" },
+  fetching_reviews: { en: "Fetching reviews...", ar: "جاري جلب المراجعات..." },
+  reviews_fetched_success: { en: "Customer reviews updated!", ar: "تم تحديث مراجعات العملاء بنجاح!" },
   no_reviews_found: { en: "No customer reviews found for this product.", ar: "لم يتم العثور على مراجعات لهذا المنتج." },
   verified_purchase: { en: "Verified Purchase", ar: "شراء مؤكد" },
   helpful_votes: { en: "helpful votes", ar: "أصوات مفيدة" },
@@ -137,7 +137,7 @@ const TRANSLATIONS = {
   sentiment_neutral: { en: "Neutral", ar: "محايد" },
   language_label: { en: "Language / اللغة", ar: "اللغة / Language" },
 
-  // Competitor Analysis
+  // Competitor Analysis & Actions
   tab_competitors: { en: "Competitor Analysis", ar: "تحليل المنافسين" },
   run_comp_analysis: { en: "Analyze Live Competitors", ar: "تحليل المنافسين مباشرة" },
   analyzing_comp: { en: "Scanning Amazon search results for competitors...", ar: "جاري البحث في نتائج أمازون عن المنافسين..."},
@@ -155,6 +155,27 @@ const TRANSLATIONS = {
   comp_search_query: { en: "Search Query Used", ar: "كلمة البحث المستخدمة" },
   no_competitors_found: { en: "No direct competitors found in search results.", ar: "لم يتم العثور على منافسين مباشرين في نتائج البحث." },
   comp_error: { en: "Failed to retrieve competitor search results.", ar: "تعذر جلب نتائج بحث المنافسين." },
+  actions: { en: "Actions", ar: "إجراءات" },
+  view_on_amazon: { en: "View on Amazon", ar: "عرض على أمازون" },
+  track: { en: "Track", ar: "متابعة" },
+  tracked: { en: "Tracked ✓", ar: "متابع ✓" },
+
+  // Cloudflare Setup
+  cf_sync_title: { en: "Cloudflare Sync", ar: "مزامنة كلاودفلير" },
+  cf_setup_btn: { en: "Setup Cloudflare Sync", ar: "إعداد مزامنة كلاودفلير" },
+  cf_manage_btn: { en: "Manage Cloudflare", ar: "إدارة كلاودفلير" },
+  cf_modal_title: { en: "Cloudflare Automated Setup", ar: "الإعداد التلقائي لكلاودفلير" },
+  cf_token_label: { en: "Cloudflare API Token", ar: "رمز API من كلاودفلير" },
+  cf_token_placeholder: { en: "Paste your Cloudflare API Token here...", ar: "الصق رمز API هنا..." },
+  cf_guide_link: { en: "How to setup Cloudflare & get API token?", ar: "كيفية إنشاء حساب واستخراج رمز API؟" },
+  cf_start_btn: { en: "Start Auto-Setup", ar: "بدء الإعداد التلقائي" },
+  cf_disconnect_btn: { en: "Disconnect Cloudflare", ar: "فصل كلاودفلير والاعتماد على التتبع المحلي" },
+  cf_disconnect_confirm: { en: "Are you sure you want to disconnect Cloudflare and switch to local 4-hour tracking?", ar: "هل أنت متأكد من رغبتك في فصل كلاودفلير والعودة للتتبع المحلي كل 4 ساعات؟" },
+  cf_connected_badge: { en: "✓ Cloudflare Active & Tracking 24/7", ar: "✓ كلاودفلير متصل ويتتبع على مدار الساعة" },
+  cf_worker_url: { en: "Worker URL", ar: "رابط الوركر (Worker URL)" },
+  cf_secret_key: { en: "API Secret Key", ar: "رمز الأمان السري (API Secret Key)" },
+  copy: { en: "Copy", ar: "نسخ" },
+  copied: { en: "Copied!", ar: "تم النسخ!" },
 
   // AI Product Hunter
   hunter_title: { en: "AI Product Hunter", ar: "صائد المنتجات الذكي" },

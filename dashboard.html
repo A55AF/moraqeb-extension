@@ -121,13 +121,13 @@
 
       <!-- Cloudflare Worker Sync Settings -->
       <div class="sidebar-group">
-        <label class="group-label">Cloudflare Worker Sync</label>
-        <div class="add-input-row">
-          <input type="text" id="input-worker-url" placeholder="Worker URL (e.g. https://...workers.dev)">
-          <input type="password" id="input-worker-key" placeholder="API Secret Key (optional)">
-          <button type="button" id="btn-save-sync" class="btn btn-secondary">Save & Sync</button>
-        </div>
-        <div id="sync-feedback" class="feedback-msg hidden"></div>
+        <label class="group-label" data-i18n="cf_sync_title">Cloudflare Sync</label>
+        <button type="button" id="btn-open-cf-setup" class="btn btn-secondary full-width">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+          </svg>
+          <span id="btn-cf-label" data-i18n="cf_setup_btn">Setup Cloudflare Sync</span>
+        </button>
       </div>
 
       <!-- Data Management / Footer -->
@@ -354,19 +354,15 @@
             <!-- Reviews Tab -->
             <div id="tab-reviews" class="tab-pane">
               <div id="reviews-sentiment-section">
-                <div id="sentiment-summary-box" class="sentiment-summary-box hidden">
-                  <h4 data-i18n="ai_customer_sentiment">AI Customer Sentiment Summary</h4>
-                  <p id="sentiment-summary-text"></p>
+                <div class="reviews-header-row">
+                  <h4 class="subheading" data-i18n="top_reviews">Customer Reviews</h4>
+                  <button type="button" id="btn-fetch-reviews" class="btn btn-sm btn-primary" data-i18n="fetch_reviews_btn">Fetch Reviews</button>
                 </div>
-
-                <div id="sentiment-aspects-box" class="sentiment-aspects-box hidden">
-                  <h5 data-i18n="sentiment_aspects">Key Sentiment Themes &amp; Aspects</h5>
-                  <div id="sentiment-aspects-chips" class="aspects-chips"></div>
-                </div>
-
-                <h4 class="subheading" data-i18n="top_reviews">Top Customer Reviews</h4>
                 <div id="reviews-list-container" class="reviews-list"></div>
-                <p id="reviews-empty-note" class="empty-note hidden" data-i18n="no_reviews_found">No customer reviews found for this product.</p>
+                <div id="reviews-empty-note" class="empty-note hidden">
+                  <p data-i18n="no_reviews_found">No customer reviews found on the product page.</p>
+                  <button type="button" id="btn-fetch-reviews-empty" class="btn btn-sm btn-primary" style="margin-top: 10px;" data-i18n="fetch_reviews_btn">Fetch Reviews</button>
+                </div>
               </div>
             </div>
 
@@ -414,6 +410,7 @@
                         <th data-i18n="rating">Rating</th>
                         <th data-i18n="reviews">Reviews</th>
                         <th>Badge</th>
+                        <th data-i18n="actions">Actions</th>
                       </tr>
                     </thead>
                     <tbody id="tbody-competitors"></tbody>
@@ -508,8 +505,19 @@
           <div class="charts-grid">
             <div class="chart-wrapper">
               <div class="chart-header">
-                <h4 class="chart-title" data-i18n="chart_price_title">Price Changes Over Time</h4>
-                <span class="chart-unit">EGP</span>
+                <div class="chart-title-group">
+                  <h4 class="chart-title" data-i18n="chart_price_title">Price Changes Over Time</h4>
+                  <span class="chart-unit">EGP</span>
+                </div>
+                <div class="chart-nav-controls hidden" id="price-nav-controls">
+                  <button type="button" class="btn-chart-nav" id="btn-price-prev" title="Previous points">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  </button>
+                  <span class="chart-page-indicator" id="price-page-indicator"></span>
+                  <button type="button" class="btn-chart-nav" id="btn-price-next" title="Next points">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </button>
+                </div>
               </div>
               <div class="chart-canvas-container">
                 <canvas id="chart-price-canvas"></canvas>
@@ -520,8 +528,19 @@
 
             <div class="chart-wrapper">
               <div class="chart-header">
-                <h4 class="chart-title" data-i18n="chart_bsr_title">Best Sellers Rank (BSR) Over Time</h4>
-                <span class="chart-unit" data-i18n="chart_rank_axis">Rank #</span>
+                <div class="chart-title-group">
+                  <h4 class="chart-title" data-i18n="chart_bsr_title">Best Sellers Rank (BSR) Over Time</h4>
+                  <span class="chart-unit" data-i18n="chart_rank_axis">Rank #</span>
+                </div>
+                <div class="chart-nav-controls hidden" id="bsr-nav-controls">
+                  <button type="button" class="btn-chart-nav" id="btn-bsr-prev" title="Previous points">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  </button>
+                  <span class="chart-page-indicator" id="bsr-page-indicator"></span>
+                  <button type="button" class="btn-chart-nav" id="btn-bsr-next" title="Next points">
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </button>
+                </div>
               </div>
               <div class="chart-canvas-container">
                 <canvas id="chart-bsr-canvas"></canvas>
@@ -659,10 +678,75 @@
     </div>
   </dialog>
 
+  <!-- Mobile Sidebar Backdrop -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+
+  <!-- Cloudflare Setup Modal -->
+  <dialog id="modal-cf-setup" class="app-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-cf-title" data-i18n="cf_modal_title">Cloudflare Automated Setup</h3>
+        <button type="button" id="btn-close-cf-modal" class="modal-close-btn" aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Connected Status & Key Details (Shown when Cloudflare is active) -->
+        <div id="cf-connected-info" class="cf-connected-box hidden">
+          <div class="cf-status-header">
+            <span class="badge badge-success" data-i18n="cf_connected_badge">✓ Cloudflare Active &amp; Tracking 24/7</span>
+          </div>
+
+          <div class="cf-credential-row">
+            <label class="cf-label" data-i18n="cf_worker_url">Worker URL</label>
+            <div class="input-with-action">
+              <input type="text" id="cf-connected-url" readonly class="input-field" value="">
+              <button type="button" id="btn-copy-worker-url" class="btn btn-sm btn-secondary" data-i18n="copy">Copy</button>
+            </div>
+          </div>
+
+          <div class="cf-credential-row">
+            <label class="cf-label" data-i18n="cf_secret_key">API Secret Key</label>
+            <div class="input-with-action">
+              <input type="password" id="cf-connected-key" readonly class="input-field" value="">
+              <button type="button" id="btn-toggle-cf-key" class="btn btn-sm btn-secondary">Show</button>
+              <button type="button" id="btn-copy-cf-key" class="btn btn-sm btn-secondary" data-i18n="copy">Copy</button>
+            </div>
+          </div>
+          <p class="cf-note-text">Stored in your Cloudflare D1 database and automatically restored if you ever reconnect.</p>
+          <hr class="cf-divider">
+        </div>
+
+        <div class="cf-setup-form">
+          <label class="cf-label" data-i18n="cf_token_label">Cloudflare API Token</label>
+          <div class="password-input-wrap">
+            <input type="password" id="input-cf-token" class="input-field" placeholder="Paste your Cloudflare API Token here...">
+          </div>
+          <div class="cf-guide-row">
+            <a id="link-cf-guide" href="#" class="helper-link" data-i18n="cf_guide_link">How to setup Cloudflare &amp; get API token?</a>
+          </div>
+          <div class="cf-actions-row">
+            <button type="button" id="btn-run-cf-setup" class="btn btn-primary" data-i18n="cf_start_btn">Start Auto-Setup</button>
+            <button type="button" id="btn-disconnect-cf" class="btn btn-outline-danger hidden" data-i18n="cf_disconnect_btn">Disconnect Cloudflare</button>
+          </div>
+          <div id="cf-setup-progress" class="cf-progress-block hidden">
+            <div class="cf-progress-spinner"></div>
+            <span id="cf-progress-text">Setting up...</span>
+          </div>
+          <div id="cf-setup-feedback" class="feedback-msg hidden"></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Load Scripts -->
   <script src="locales.js"></script>
   <script src="content.js"></script>
   <script src="storage.js"></script>
+  <script src="cloudflare-setup.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
