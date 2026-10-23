@@ -3,7 +3,10 @@
 // - Cloudflare mode: consumes D1 staging buffer (4h) & refreshes metadata (24h)
 // - Local mode: executes micro-batch price tracking (1h) with random jitter delay
 
-importScripts("storage.js", "cloudflare-setup.js");
+// Load dependencies: importScripts for Chrome service worker; Firefox loads them via manifest background.scripts
+if (typeof importScripts === "function") {
+  importScripts("storage.js", "cloudflare-setup.js");
+}
 
 const ALARM_LOCAL_PRICE_TRACK = "moraqeb-local-track";
 const LOCAL_TRACK_INTERVAL_MINUTES = 60;
