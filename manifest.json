@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Moraqeb - Amazon Product Tracker & Analytics",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Inspect Amazon products, calculate FBA margins, and track listings with a self-contained analytics dashboard in your browser.",
   "permissions": [
     "activeTab",
@@ -60,7 +60,10 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "moraqeb-tracker@local",
-      "strict_min_version": "109.0"
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }

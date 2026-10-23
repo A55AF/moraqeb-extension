@@ -248,6 +248,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     return /^https?:\/\//i.test(trimmed) ? trimmed : "#";
   }
 
+  function createExternalLinkIcon() {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("class", "icon icon-sm");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+
+    const path = document.createElementNS(svgNS, "path");
+    path.setAttribute("d", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6");
+
+    const polyline = document.createElementNS(svgNS, "polyline");
+    polyline.setAttribute("points", "15 3 21 3 21 9");
+
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", "10");
+    line.setAttribute("y1", "14");
+    line.setAttribute("x2", "21");
+    line.setAttribute("y2", "3");
+
+    svg.append(path, polyline, line);
+    return svg;
+  }
+
   function formatPrice(price, currency = "EGP") {
     if (price === null || price === undefined || isNaN(price)) return "—";
     return `${Number(price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -1035,49 +1062,104 @@ document.addEventListener("DOMContentLoaded", async () => {
     comps.forEach((c) => {
       const isTracked = Boolean(products[c.asin]);
       const tr = document.createElement("tr");
-      const safeAsin = escapeHtml(c.asin);
-      const safeTitle = escapeHtml(c.title);
-      const safeBrand = escapeHtml(c.brand || "—");
-      const safePrice = escapeHtml(c.price !== null ? `${c.price} ${c.currency || "EGP"}` : "—");
-      const safeRating = escapeHtml(c.rating !== null ? `${c.rating} / 5` : "—");
-      const safeReviews = escapeHtml(c.reviews !== null ? String(c.reviews) : "—");
-      const safeBadge = c.badge ? `<span class="badge badge-accent">${escapeHtml(c.badge)}</span>` : "—";
-      const safeLink = sanitizeUrl(c.link);
-      const safeImg = c.image ? `<img src="${sanitizeUrl(c.image)}" class="comp-thumb" alt="">` : "";
-      const viewAmazonText = escapeHtml(t("view_on_amazon", currentLang));
-      const trackBtnText = escapeHtml(isTracked ? t("tracked", currentLang) : t("track", currentLang));
 
-      tr.innerHTML = `
-        <td><code>${safeAsin}</code></td>
-        <td>
-          <div class="comp-title-cell">
-            ${safeImg}
-            <span class="comp-title-text" title="${safeTitle}">${safeTitle}</span>
-          </div>
-        </td>
-        <td>${safeBrand}</td>
-        <td><strong>${safePrice}</strong></td>
-        <td>${safeRating}</td>
-        <td>${safeReviews}</td>
-        <td>${safeBadge}</td>
-        <td>
-          <div class="comp-action-btns">
-            <a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary comp-view-btn" title="${viewAmazonText}">
-              <span>${viewAmazonText}</span>
-              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
-            </a>
-            <button type="button" class="btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-comp-track" ${isTracked ? "disabled" : ""}>
-              ${trackBtnText}
-            </button>
-          </div>
-        </td>
-      `;
+      // 1. ASIN
+      const tdAsin = document.createElement("td");
+      const codeAsin = document.createElement("code");
+      codeAsin.textContent = c.asin || "";
+      tdAsin.appendChild(codeAsin);
 
-      const btnTrack = tr.querySelector(".btn-comp-track");
+      // 2. Title & Image
+      const tdTitle = document.createElement("td");
+      const titleCell = document.createElement("div");
+      titleCell.className = "comp-title-cell";
+      if (c.image) {
+        const img = document.createElement("img");
+        img.src = sanitizeUrl(c.image);
+        img.className = "comp-thumb";
+        img.alt = "";
+        titleCell.appendChild(img);
+      }
+      const titleText = document.createElement("span");
+      titleText.className = "comp-title-text";
+      titleText.title = c.title || "—";
+      titleText.textContent = c.title || "—";
+      titleCell.appendChild(titleText);
+      tdTitle.appendChild(titleCell);
+
+      // 3. Brand
+      const tdBrand = document.createElement("td");
+      tdBrand.textContent = c.brand || "—";
+
+      // 4. Price
+      const tdPrice = document.createElement("td");
+      const strongPrice = document.createElement("strong");
+      strongPrice.textContent =
+        c.price !== null && c.price !== undefined
+          ? `${c.price} ${c.currency || "EGP"}`
+          : "—";
+      tdPrice.appendChild(strongPrice);
+
+      // 5. Rating
+      const tdRating = document.createElement("td");
+      tdRating.textContent =
+        c.rating !== null && c.rating !== undefined ? `${c.rating} / 5` : "—";
+
+      // 6. Reviews
+      const tdReviews = document.createElement("td");
+      tdReviews.textContent =
+        c.reviews !== null && c.reviews !== undefined ? String(c.reviews) : "—";
+
+      // 7. Badge
+      const tdBadge = document.createElement("td");
+      if (c.badge) {
+        const badgeSpan = document.createElement("span");
+        badgeSpan.className = "badge badge-accent";
+        badgeSpan.textContent = c.badge;
+        tdBadge.appendChild(badgeSpan);
+      } else {
+        tdBadge.textContent = "—";
+      }
+
+      // 8. Actions
+      const tdActions = document.createElement("td");
+      const actionBtns = document.createElement("div");
+      actionBtns.className = "comp-action-btns";
+
+      const viewText = t("view_on_amazon", currentLang);
+      const viewLink = document.createElement("a");
+      viewLink.href = sanitizeUrl(c.link);
+      viewLink.target = "_blank";
+      viewLink.rel = "noopener noreferrer";
+      viewLink.className = "btn btn-sm btn-secondary comp-view-btn";
+      viewLink.title = viewText;
+
+      const viewSpan = document.createElement("span");
+      viewSpan.textContent = viewText;
+      viewLink.append(viewSpan, createExternalLinkIcon());
+
+      const btnTrack = document.createElement("button");
+      btnTrack.type = "button";
+      btnTrack.className = `btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-comp-track`;
+      btnTrack.disabled = isTracked;
+      btnTrack.textContent = isTracked
+        ? t("tracked", currentLang)
+        : t("track", currentLang);
+
+      actionBtns.append(viewLink, btnTrack);
+      tdActions.appendChild(actionBtns);
+
+      tr.append(
+        tdAsin,
+        tdTitle,
+        tdBrand,
+        tdPrice,
+        tdRating,
+        tdReviews,
+        tdBadge,
+        tdActions,
+      );
+
       btnTrack.addEventListener("click", async () => {
         btnTrack.disabled = true;
         btnTrack.textContent = "...";
@@ -1550,44 +1632,100 @@ document.addEventListener("DOMContentLoaded", async () => {
           ? (p.title || asin).substring(0, 45) + "..."
           : p.title || asin;
 
-      const safeAsin = escapeHtml(asin);
-      const safeImg = sanitizeUrl(imgUrl);
-      const safeTitle = escapeHtml(titleShort);
-      const safePrice = escapeHtml(curP ? `${curP.toLocaleString()} EGP` : "—");
-      const safeRating = escapeHtml(p.rating ? `${p.rating} / 5` : "—");
-      const safeReviews = escapeHtml(p.reviews_count ? Number(p.reviews_count).toLocaleString() : "—");
-      const safeBsr = escapeHtml(curBsr ? `#${Number(curBsr).toLocaleString()}` : "—");
-      const safeEstUnits = escapeHtml(scores.est_units ? `≈ ${scores.est_units}` : "—");
-      const safeOppScore = escapeHtml(String(scores.opp_score));
-      const safeStockBadge = p.in_stock
-        ? `<span class="badge badge-success">${escapeHtml(t("in_stock", currentLang))}</span>`
-        : `<span class="badge badge-danger">${escapeHtml(t("out_of_stock", currentLang))}</span>`;
-      const safeSeller = escapeHtml(p.seller || "Amazon");
+      // 1. ASIN
+      const tdAsin = document.createElement("td");
+      const codeAsin = document.createElement("code");
+      codeAsin.textContent = asin || "";
+      tdAsin.appendChild(codeAsin);
 
-      tr.innerHTML = `
-        <td><code>${safeAsin}</code></td>
-        <td>
-          <img src="${safeImg}" class="table-thumb" alt="Product">
-          <strong>${safeTitle}</strong>
-        </td>
-        <td><strong>${safePrice}</strong></td>
-        <td>${safeRating}</td>
-        <td>${safeReviews}</td>
-        <td>${safeBsr}</td>
-        <td>${safeEstUnits}</td>
-        <td><span class="badge badge-primary">${safeOppScore}/100</span></td>
-        <td>${safeStockBadge}</td>
-        <td>${safeSeller}</td>
-        <td>
-          <button type="button" class="btn btn-sm btn-secondary btn-table-view" data-asin="${safeAsin}">View</button>
-        </td>
-      `;
+      // 2. Product (Image & Title)
+      const tdProduct = document.createElement("td");
+      const img = document.createElement("img");
+      img.src = sanitizeUrl(imgUrl);
+      img.className = "table-thumb";
+      img.alt = "Product";
+      const strongTitle = document.createElement("strong");
+      strongTitle.textContent = titleShort;
+      tdProduct.append(img, strongTitle);
 
-      tr.querySelector(".btn-table-view").addEventListener("click", () => {
+      // 3. Price
+      const tdPrice = document.createElement("td");
+      const strongPrice = document.createElement("strong");
+      strongPrice.textContent =
+        curP !== null && curP !== undefined
+          ? `${curP.toLocaleString()} EGP`
+          : "—";
+      tdPrice.appendChild(strongPrice);
+
+      // 4. Rating
+      const tdRating = document.createElement("td");
+      tdRating.textContent = p.rating ? `${p.rating} / 5` : "—";
+
+      // 5. Reviews
+      const tdReviews = document.createElement("td");
+      tdReviews.textContent = p.reviews_count
+        ? Number(p.reviews_count).toLocaleString()
+        : "—";
+
+      // 6. BSR
+      const tdBsr = document.createElement("td");
+      tdBsr.textContent = curBsr ? `#${Number(curBsr).toLocaleString()}` : "—";
+
+      // 7. Est Units
+      const tdEstUnits = document.createElement("td");
+      tdEstUnits.textContent = scores.est_units
+        ? `≈ ${scores.est_units}`
+        : "—";
+
+      // 8. Opp Score
+      const tdOppScore = document.createElement("td");
+      const scoreBadge = document.createElement("span");
+      scoreBadge.className = "badge badge-primary";
+      scoreBadge.textContent = `${scores.opp_score}/100`;
+      tdOppScore.appendChild(scoreBadge);
+
+      // 9. Stock Badge
+      const tdStock = document.createElement("td");
+      const stockBadge = document.createElement("span");
+      stockBadge.className = p.in_stock
+        ? "badge badge-success"
+        : "badge badge-danger";
+      stockBadge.textContent = p.in_stock
+        ? t("in_stock", currentLang)
+        : t("out_of_stock", currentLang);
+      tdStock.appendChild(stockBadge);
+
+      // 10. Seller
+      const tdSeller = document.createElement("td");
+      tdSeller.textContent = p.seller || "Amazon";
+
+      // 11. View Action Button
+      const tdAction = document.createElement("td");
+      const btnView = document.createElement("button");
+      btnView.type = "button";
+      btnView.className = "btn btn-sm btn-secondary btn-table-view";
+      btnView.dataset.asin = asin;
+      btnView.textContent = "View";
+      btnView.addEventListener("click", () => {
         activeAsin = asin;
         updateProductDropdown();
         setMode("single");
       });
+      tdAction.appendChild(btnView);
+
+      tr.append(
+        tdAsin,
+        tdProduct,
+        tdPrice,
+        tdRating,
+        tdReviews,
+        tdBsr,
+        tdEstUnits,
+        tdOppScore,
+        tdStock,
+        tdSeller,
+        tdAction,
+      );
 
       tbodyComparison.appendChild(tr);
     });
@@ -1663,34 +1801,58 @@ document.addEventListener("DOMContentLoaded", async () => {
               ? `${cand.rating.average} / 5`
               : "—";
 
-        const safeTitle = escapeHtml(cand.title);
-        const safeAsin = escapeHtml(cand.asin);
-        const safeBrand = escapeHtml(cand.brand || "—");
-        const safeRating = escapeHtml(ratingDisplay);
-        const safeReviews = escapeHtml(String(cand.reviews_count || cand.reviews || 0));
-        const safePrice = escapeHtml(cand.price ? `${cand.price} ${cand.currency || "EGP"}` : "—");
-        const safeScore = escapeHtml(String(cand.hunter_score));
-        const trackText = escapeHtml(isTracked ? t("product_tracked", currentLang) : t("track_product_btn", currentLang));
+        // 1. Info column
+        const infoCol = document.createElement("div");
+        infoCol.className = "hunter-info-col";
 
-        card.innerHTML = `
-          <div class="hunter-info-col">
-            <h4>#${idx + 1} · ${safeTitle}</h4>
-            <p class="view-subtitle">ASIN: <code>${safeAsin}</code> · Brand: ${safeBrand} · ${safeRating} (${safeReviews} reviews)</p>
-          </div>
-          <div class="hunter-price-col">
-            <strong>${safePrice}</strong>
-          </div>
-          <div class="hunter-score-col">
-            <span class="hunter-score-badge">${safeScore}/100</span>
-          </div>
-          <div class="hunter-action-col">
-            <button type="button" class="btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-hunter-track" ${isTracked ? "disabled" : ""}>
-              ${trackText}
-            </button>
-          </div>
-        `;
+        const h4 = document.createElement("h4");
+        h4.textContent = `#${idx + 1} · ${cand.title || "—"}`;
 
-        const btnTrack = card.querySelector(".btn-hunter-track");
+        const pSub = document.createElement("p");
+        pSub.className = "view-subtitle";
+
+        const codeAsin = document.createElement("code");
+        codeAsin.textContent = cand.asin || "";
+
+        pSub.append(
+          "ASIN: ",
+          codeAsin,
+          ` · Brand: ${cand.brand || "—"} · ${ratingDisplay} (${cand.reviews_count || cand.reviews || 0} reviews)`,
+        );
+        infoCol.append(h4, pSub);
+
+        // 2. Price column
+        const priceCol = document.createElement("div");
+        priceCol.className = "hunter-price-col";
+        const strongPrice = document.createElement("strong");
+        strongPrice.textContent =
+          cand.price !== null && cand.price !== undefined
+            ? `${cand.price} ${cand.currency || "EGP"}`
+            : "—";
+        priceCol.appendChild(strongPrice);
+
+        // 3. Score column
+        const scoreCol = document.createElement("div");
+        scoreCol.className = "hunter-score-col";
+        const scoreBadge = document.createElement("span");
+        scoreBadge.className = "hunter-score-badge";
+        scoreBadge.textContent = `${cand.hunter_score}/100`;
+        scoreCol.appendChild(scoreBadge);
+
+        // 4. Action column
+        const actionCol = document.createElement("div");
+        actionCol.className = "hunter-action-col";
+        const btnTrack = document.createElement("button");
+        btnTrack.type = "button";
+        btnTrack.className = `btn btn-sm ${isTracked ? "btn-secondary" : "btn-primary"} btn-hunter-track`;
+        btnTrack.disabled = isTracked;
+        btnTrack.textContent = isTracked
+          ? t("product_tracked", currentLang)
+          : t("track_product_btn", currentLang);
+        actionCol.appendChild(btnTrack);
+
+        card.append(infoCol, priceCol, scoreCol, actionCol);
+
         if (!isTracked) {
           btnTrack.addEventListener("click", async () => {
             btnTrack.disabled = true;
